@@ -63,16 +63,28 @@ typedef struct {
     mfxU32  FourCC;     /*!< FourCC code of the color format. See the ColorFourCC enumerator for details. */
     union {
         struct { /* Frame parameters */
-            mfxU16  Width;  /*!< Width of the video frame in pixels. Must be a multiple of 16. */
-            mfxU16  Height; /*!< Height of the video frame in pixels. Must be a multiple of 16 for progressive frame sequence and a multiple of 32 otherwise. */
+            /*! Width of the video frame in pixels. Must be a multiple of 16. 
+                In case of fused operation of decode plus VPP it can be set to zero to signalize that scaling operation is not requested. */
+            mfxU16  Width;  
+            /*! Height of the video frame in pixels. Must be a multiple of 16 for progressive frame sequence and a multiple of 32 otherwise. 
+                In case of fused operation of decode plus VPP it can be set to zero to signalize that scaling operation is not requested. */
+            mfxU16  Height; 
 
             /*! @{
              @name ROI
              The region of interest of the frame. Specify the display width and height in mfxVideoParam. */
-            mfxU16  CropX; /*!< X coordinate. */
-            mfxU16  CropY; /*!< Y coordinate. */
-            mfxU16  CropW; /*!< Width in pixels. */
-            mfxU16  CropH; /*!< Height in pixels. */
+            /*! X coordinate.
+                In case of fused operation of decode plus VPP it can be set to zero to signalize that cropping operation is not requested. */
+            mfxU16  CropX; 
+            /*! Y coordinate.
+                In case of fused operation of decode plus VPP it can be set to zero to signalize that cropping operation is not requested. */
+            mfxU16  CropY; 
+            /*! Width in pixels. 
+                In case of fused operation of decode plus VPP it can be set to zero to signalize that cropping operation is not requested. */
+            mfxU16  CropW; 
+            /*! Height in pixels. 
+                In case of fused operation of decode plus VPP it can be set to zero to signalize that cropping operation is not requested. */
+            mfxU16  CropH; 
             /*! @} */
         };
         struct { /* Buffer parameters (for plain formats like P8) */
@@ -170,13 +182,9 @@ enum {
     MFX_FOURCC_BGRA         = MFX_FOURCC_RGB4,                 /*!< Alias for the RGB4 color format. */
     /*! BGR 24 bit planar layout (3 separate channels, 8-bits per sample each). This format should be mapped to VA_FOURCC_BGRP. */
     MFX_FOURCC_BGRP         = MFX_MAKEFOURCC('B','G','R','P'),
-#ifdef ONEVPL_EXPERIMENTAL
     /*! 8bit per sample 4:4:4 format packed in 32 bits, X=unused/undefined, 'X' channel is 8 MSBs, then 'Y', then 'U', and then 'V' channels. This format should be mapped to VA_FOURCC_XYUV. */
     MFX_FOURCC_XYUV         = MFX_MAKEFOURCC('X','Y','U','V'),
-#endif
-#ifdef ONEVPL_EXPERIMENTAL
     MFX_FOURCC_ABGR16F      = MFX_MAKEFOURCC('B', 'G', 'R', 'F'),  /*!< 16 bits float point ABGR color format packed in 64 bits. 'A' channel is 16 MSBs, then 'B', then 'G' and then 'R' channels. This format should be mapped to DXGI_FORMAT_R16G16B16A16_FLOAT or D3DFMT_A16B16G16R16F formats.. */
-#endif
 };
 
 /* PicStruct */
@@ -274,7 +282,6 @@ typedef struct
 } mfxA2RGB10;
 MFX_PACK_END()
 
-#ifdef ONEVPL_EXPERIMENTAL
 MFX_PACK_BEGIN_USUAL_STRUCT()
 /*! Specifies "pixel" in ABGR 16 bit half float point color format */
 typedef struct
@@ -285,7 +292,6 @@ typedef struct
     mfxFP16 A; /*!< A component. */
 } mfxABGR16FP;
 MFX_PACK_END()
-#endif
 
 /*! Describes frame buffer pointers. */
 MFX_PACK_BEGIN_STRUCT_W_L_TYPE()
@@ -349,9 +355,7 @@ typedef struct {
         mfxU16  *V16;   /*!< V16 channel. */
         mfxU8   *B;     /*!< B channel. */
         mfxA2RGB10 *A2RGB10; /*!< A2RGB10 channel for A2RGB10 format (merged ARGB). */
-#ifdef ONEVPL_EXPERIMENTAL
         mfxABGR16FP* ABGRFP16; /*!< ABGRFP16 channel for half float ARGB format (use this merged one due to no separate FP16 Alpha Channel). */
-#endif
     };
     mfxU8       *A;     /*!< A channel. */
     mfxMemId    MemId;  /*!< Memory ID of the data buffers. Ignored if any of the preceding data pointers is non-zero. */
@@ -1029,13 +1033,13 @@ typedef struct {
         This parameter is a mandated input for QueryIOSurf and Init API functions. The output pattern must be specified for DECODE.
         The input pattern must be specified for ENCODE. Both input and output pattern must be specified for VPP. */
     mfxU16  IOPattern;
-    mfxExtBuffer** ExtParam; /*!< The number of extra configuration structures attached to this structure. */
-    mfxU16  NumExtParam;     /*!< Points to an array of pointers to the extra configuration structures. See the ExtendedBufferID enumerator
+    mfxExtBuffer** ExtParam; /*!< Points to an array of pointers to the extra configuration structures. See the ExtendedBufferID enumerator
                                   for a list of extended configurations.
                                   The list of extended buffers should not contain duplicated entries, such as entries of the same type.
                                   If the  mfxVideoParam structure is used to query library capability, then the list of extended buffers attached to the input
                                   and output mfxVideoParam structure should be equal, that is, it should contain the same number of extended
                                   buffers of the same type. */
+    mfxU16  NumExtParam;     /*!< The number of extra configuration structures attached to this structure. */
     mfxU16  reserved2;
 } mfxVideoParam;
 MFX_PACK_END()
@@ -1677,9 +1681,7 @@ enum {
     MFX_CONTENT_UNKNOWN              = 0,
     MFX_CONTENT_FULL_SCREEN_VIDEO    = 1,
     MFX_CONTENT_NON_VIDEO_SCREEN     = 2,
-#ifdef ONEVPL_EXPERIMENTAL
     MFX_CONTENT_NOISY_VIDEO          = 3
-#endif
 };
 
 /*! The PRefType enumerator itemizes models of reference list construction and DPB management when GopRefDist=1. */
@@ -3718,12 +3720,8 @@ MFX_PACK_BEGIN_STRUCT_W_L_TYPE()
 typedef struct {
     mfxExtBuffer    Header; /*!< Extension buffer header. Header.BufferId must be equal to MFX_EXTBUFF_MBQP. */
 
-#ifdef ONEVPL_EXPERIMENTAL
     mfxU32 reserved[9];
     mfxU32 Pitch;       /*!< Distance in bytes between the start of two consecutive rows in the QP array. */
-#else
-    mfxU32 reserved[10];
-#endif
     mfxU16 Mode;        /*!< Defines QP update mode. See MBQPMode enumerator for more details. */
     mfxU16 BlockSize;   /*!< QP block size, valid for HEVC only during Init and Runtime. */
     mfxU32 NumQPAlloc;  /*!< Size of allocated by application QP or DeltaQP array. */
@@ -4181,6 +4179,7 @@ typedef mfxExtAVCRefLists mfxExtHEVCRefLists;
 typedef mfxExtAvcTemporalLayers mfxExtHEVCTemporalLayers;
 
 typedef mfxExtAVCRefListCtrl mfxExtRefListCtrl;
+typedef mfxExtAVCEncodedFrameInfo mfxExtEncodedFrameInfo;
 
 /* The MirroringType enumerator itemizes mirroring types. */
 enum
@@ -5067,6 +5066,8 @@ MFX_PACK_END()
 
 #ifdef __cplusplus
 } // extern "C"
+
 #endif
+
 
 #endif
