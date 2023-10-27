@@ -1659,7 +1659,7 @@ mfxStatus TaskManager::FillTask(
     }
 
     m_actualNumber += 1; // make sense for simple mode only
-
+    MFX_CHECK_NULL_PTR1(pTask->input.pSurf);
     mfxStatus sts = m_core->IncreaseReference(*pTask->input.pSurf);
     MFX_CHECK_STS(sts);
 
@@ -2801,7 +2801,7 @@ mfxStatus  VideoVPPHW::Init(
             }
 
             // create "Default" MCTF settings.
-            IntMctfParams MctfConfig;
+            IntMctfParams MctfConfig = {};
             CMC::QueryDefaultParams(&MctfConfig);
 
             // create default MCTF control
@@ -3253,7 +3253,7 @@ mfxStatus VideoVPPHW::Reset(mfxVideoParam *par)
         if (m_executeParams.bEnableMctf)
         {
             // create "Default" MCTF settings.
-            IntMctfParams MctfConfig;
+            IntMctfParams MctfConfig = {};
             CMC::QueryDefaultParams(&MctfConfig);
 
             // create default MCTF control

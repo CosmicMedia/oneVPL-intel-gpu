@@ -26,6 +26,7 @@
 #include "av1ehw_base.h"
 #include "av1ehw_ddi.h"
 #include "ehw_device.h"
+#include "ehw_task_manager.h"
 #include <vector>
 #include <set>
 
@@ -954,7 +955,7 @@ namespace Base
         if (par.mfx.FrameInfo.FrameRateExtN && par.mfx.FrameInfo.FrameRateExtD)
         {
             // Use type mfxU64 to avoid value overflow with most value precise obtained.
-            mfxU64 targetbps    = TargetKbps(par.mfx) * 1000;
+            mfxU64 targetbps    = mfxU64(TargetKbps(par.mfx)) * 1000;
             avgFrameSizeInBytes = mfxU32(targetbps * par.mfx.FrameInfo.FrameRateExtD / par.mfx.FrameInfo.FrameRateExtN / 8);
         }
 
@@ -1358,9 +1359,9 @@ namespace Base
         using Defaults            = StorageVar<__LINE__ - _KD, Base::Defaults>;
         using SegDpb              = StorageVar<__LINE__ - _KD, SegDpbType>;
         using DeviceCreation      = StorageVar<__LINE__ - _KD, Base::DeviceCreationMask>;
+        using TaskManager         = StorageVar<__LINE__ - _KD, MakeStorable<MfxEncodeHW::TaskManager::TMRefWrapper>>;
         static const StorageR::TKey CallChainsKey = __LINE__ - _KD;
         static const StorageR::TKey ReservedKey0    = __LINE__ - _KD;
-        static const StorageR::TKey TaskManagerKey  = __LINE__ - _KD;
         static const StorageR::TKey NUM_KEYS = __LINE__ - _KD;
     };
 

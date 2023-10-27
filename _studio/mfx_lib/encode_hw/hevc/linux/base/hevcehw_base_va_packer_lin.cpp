@@ -60,7 +60,7 @@ void VAPacker::Query1WithCaps(const FeatureBlocks& /*blocks*/, TPushQ1 Push)
 
         caps.MaxEncodedBitDepth |= (!caps.BitDepth8Only);
         caps.YUV444ReconSupport |= (!caps.Color420Only && IsOn(par.mfx.LowPower));
-        caps.YUV422ReconSupport &= (!caps.Color420Only);
+        caps.YUV422ReconSupport &= (!caps.Color420Only && !IsOn(par.mfx.LowPower));
 
         return MFX_ERR_NONE;
     });
@@ -275,11 +275,11 @@ void AddVaMiscRC(
     {
         const mfxExtCodingOption3& CO3 = ExtBuffer::Get(par);
         rc.min_qp = task.m_minQP - 6*(CO3.TargetBitDepthLuma - 8);
-        if ((rc.min_qp < 0) || (rc.min_qp > 51))
+        if (rc.min_qp > 51)
             rc.min_qp = 10;
 
         rc.max_qp = task.m_maxQP - 6*(CO3.TargetBitDepthLuma - 8);
-        if ((rc.max_qp < 0) || (rc.max_qp > 51))
+        if (rc.max_qp > 51)
             rc.max_qp = 51;
     }
 
