@@ -130,6 +130,7 @@ VideoDECODEAV1::VideoDECODEAV1(VideoCORE* core, mfxStatus* sts)
     , m_first_run(true)
     , m_request()
     , m_response()
+    , m_response_alien()
     , m_is_init(false)
     , m_in_framerate(0)
     , m_is_cscInUse(false)
@@ -621,6 +622,7 @@ mfxStatus VideoDECODEAV1::QueryIOSurf(VideoCORE* core, mfxVideoParam* par, mfxFr
     if (!(par->IOPattern & MFX_IOPATTERN_OUT_SYSTEM_MEMORY))
     {
         sts = MFX_VPX_Utility::QueryIOSurfInternal(par, request);
+        MFX_CHECK_STS(sts);
         uint32_t dpb_size = std::max(8 + par->AsyncDepth, 8);
         if (dpb_size >= request->NumFrameSuggested)
         {
@@ -910,22 +912,15 @@ static mfxStatus CheckFrameInfo(mfxFrameInfo &info)
     switch (info.FourCC)
     {
     case MFX_FOURCC_NV12:
+        MFX_CHECK(info.ChromaFormat == MFX_CHROMAFORMAT_YUV420, MFX_ERR_INVALID_VIDEO_PARAM);
         break;
     case MFX_FOURCC_P010:
+        MFX_CHECK(info.ChromaFormat == MFX_CHROMAFORMAT_YUV420, MFX_ERR_INVALID_VIDEO_PARAM);
         MFX_CHECK(info.Shift == 1, MFX_ERR_INCOMPATIBLE_VIDEO_PARAM);
         break;
     default:
         MFX_CHECK_STS(MFX_ERR_INVALID_VIDEO_PARAM);
     }
-
-    switch (info.ChromaFormat)
-    {
-    case MFX_CHROMAFORMAT_YUV420:
-        break;
-    default:
-        MFX_CHECK_STS(MFX_ERR_INVALID_VIDEO_PARAM);
-    }
-
 
     return MFX_ERR_NONE;
 }
@@ -988,8 +983,8 @@ mfxStatus VideoDECODEAV1::SubmitFrame(mfxBitstream* bs, mfxFrameSurface1* surfac
                  umcRes = m_decoder->GetInfo(&vp);
                  FillVideoParam(&vp, &m_video_par);
                  if (surface_work &&
-                     (m_video_par.mfx.FrameInfo.Width >= surface_work->Info.Width ||
-                      m_video_par.mfx.FrameInfo.Height >= surface_work->Info.Height))
+                     (m_video_par.mfx.FrameInfo.Width > surface_work->Info.Width ||
+                      m_video_par.mfx.FrameInfo.Height > surface_work->Info.Height))
                  {
                      MFX_RETURN(MFX_ERR_INCOMPATIBLE_VIDEO_PARAM);
                  }

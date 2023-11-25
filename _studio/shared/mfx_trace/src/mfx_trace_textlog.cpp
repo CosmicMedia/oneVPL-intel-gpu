@@ -86,7 +86,8 @@ mfxTraceU32 MFXTraceTextLog_Init()
     if (!sts) sts = MFXTraceTextLog_GetRegistryParams();
     std::string StrPid = "/mfxlib_Pid";
     std::string filename_path = VplLogPath + StrPid + std::to_string(getpid()) + "_Tid" + std::to_string(pthread_self()) + ".log";
-    strcpy(g_mfxTracePrintfFileName,filename_path.c_str()); 
+    strncpy(g_mfxTracePrintfFileName,filename_path.c_str(), MAX_PATH - 1);
+    g_mfxTracePrintfFileName[MAX_PATH - 1] = 0;
 
     if (!sts)
     {
@@ -172,7 +173,7 @@ mfxTraceU32 MFXTraceTextLog_vDebugMessage(mfxTraceStaticHandle* static_handle,
     }
     if (category && !(g_PrintfSuppress & MFX_TRACE_TEXTLOG_SUPPRESS_CATEGORY))
     {
-        p_str = mfx_trace_sprintf(p_str, len, "%S: ", category);
+        p_str = mfx_trace_sprintf(p_str, len, "%s: ", category);
     }
     if (!(g_PrintfSuppress & MFX_TRACE_TEXTLOG_SUPPRESS_LEVEL))
     {
@@ -198,14 +199,17 @@ mfxTraceU32 MFXTraceTextLog_vDebugMessage(mfxTraceStaticHandle* static_handle,
         p_str = mfx_trace_vsprintf(p_str, len, format, args);
         if (strcmp(format, exitChr) == 0)
         {
-            if (static_handle->tick.totalTime)
+            if (static_handle)
             {
-                p_str = mfx_trace_sprintf(p_str, len, "\t\tExec Time: %5.4fms\t\t", static_handle->tick.totalTime);
-            }
+                if (static_handle->tick.totalTime)
+                {
+                    p_str = mfx_trace_sprintf(p_str, len, "\t\tExec Time: %5.4fms\t\t", static_handle->tick.totalTime);
+                }
 
-            if (static_handle->tick.callCount)
-            {
-                p_str = mfx_trace_sprintf(p_str, len, "\tCall Count: %-d", static_handle->tick.callCount);
+                if (static_handle->tick.callCount)
+                {
+                    p_str = mfx_trace_sprintf(p_str, len, "\tCall Count: %I64d", static_handle->tick.callCount);
+                }
             }
 
             p_str = mfx_trace_sprintf(p_str, len, "\n");

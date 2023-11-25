@@ -235,6 +235,7 @@ VAProfile get_next_va_profile(uint32_t umc_codec, uint32_t profile)
         break;
     case UMC::VA_H265 | UMC::VA_PROFILE_SCC | UMC::VA_PROFILE_444:
         if (profile < 1) va_profile = VAProfileHEVCSccMain444;
+        break;
     case UMC::VA_H265 | UMC::VA_PROFILE_SCC | UMC::VA_PROFILE_444 | UMC::VA_PROFILE_10:
         if (profile < 1) va_profile = VAProfileHEVCSccMain444_10;
         break;
@@ -909,6 +910,7 @@ int32_t LinuxVideoAccelerator::GetSurfaceID(int32_t idx) const
 {
     VASurfaceID *surface;
     Status sts = UMC_OK;
+    MFX_CHECK(idx >= 0, UMC_ERR_INVALID_PARAMS);
 
     try {
         sts = m_allocator->GetFrameHandle(idx, &surface);
