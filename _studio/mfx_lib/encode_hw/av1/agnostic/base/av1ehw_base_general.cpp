@@ -189,10 +189,22 @@ void General::SetSupported(ParamSupport& blocks)
         const auto& buf_src = *(const mfxExtRefListCtrl*)pSrc;
         auto& buf_dst = *(mfxExtRefListCtrl*)pDst;
 
-        for (mfxU32 i = 0; i < 16; i++)
+        for (size_t i = 0; i < mfx::size(buf_src.PreferredRefList); i++)
+        {
+            MFX_COPY_FIELD(PreferredRefList[i].FrameOrder);
+            MFX_COPY_FIELD(PreferredRefList[i].LongTermIdx);
+        }
+
+        for (size_t i = 0; i < mfx::size(buf_src.RejectedRefList); i++)
         {
             MFX_COPY_FIELD(RejectedRefList[i].FrameOrder);
+            MFX_COPY_FIELD(RejectedRefList[i].LongTermIdx);
+        }
+
+        for (size_t i = 0; i < mfx::size(buf_src.LongTermRefList); i++)
+        {
             MFX_COPY_FIELD(LongTermRefList[i].FrameOrder);
+            MFX_COPY_FIELD(LongTermRefList[i].LongTermIdx);
         }
     });
 
@@ -816,7 +828,7 @@ void General::QueryIOSurf(const FeatureBlocks& blocks, TPushQIS Push)
         auto fourCC = par.mfx.FrameInfo.FourCC;
 
         req.Info = par.mfx.FrameInfo;
-        SetDefault(req.Info.Shift, (fourCC == MFX_FOURCC_P010 || fourCC == MFX_FOURCC_Y210));
+        SetDefault(req.Info.Shift, (fourCC == MFX_FOURCC_P010 || fourCC == MFX_FOURCC_Y210 || fourCC == MFX_FOURCC_P210));
 
         bool bSYS = par.IOPattern == MFX_IOPATTERN_IN_SYSTEM_MEMORY;
         bool bVID = par.IOPattern == MFX_IOPATTERN_IN_VIDEO_MEMORY;
@@ -1296,17 +1308,8 @@ void General::AllocTask(const FeatureBlocks& blocks, TPushAT Push)
 static bool CheckRefListCtrl(mfxExtRefListCtrl* refListCtrl)
 {
     mfxU32 changed = 0;
-    changed += CheckOrZero<mfxU16>(refListCtrl->ApplyLongTermIdx, 0);
     changed += CheckOrZero<mfxU16>(refListCtrl->NumRefIdxL0Active, 0);
     changed += CheckOrZero<mfxU16>(refListCtrl->NumRefIdxL1Active, 0);
-    for (auto& preferred : refListCtrl->PreferredRefList)
-    {
-        if (preferred.FrameOrder != static_cast<mfxU32>(MFX_FRAMEORDER_UNKNOWN))
-        {
-            preferred.FrameOrder = mfxU32(MFX_FRAMEORDER_UNKNOWN);
-            changed++;
-        }
-    }
     return changed;
 }
 
@@ -1518,7 +1521,8 @@ void General::SubmitTask(const FeatureBlocks& blocks, TPushST Push)
 
         surfDst.Info.Shift =
             surfDst.Info.FourCC == MFX_FOURCC_P010
-            || surfDst.Info.FourCC == MFX_FOURCC_Y210; // convert to native shift in core.CopyFrame() if required
+            || surfDst.Info.FourCC == MFX_FOURCC_Y210
+            || surfDst.Info.FourCC == MFX_FOURCC_P210; // convert to native shift in core.CopyFrame() if required
 
         return core.DoFastCopyWrapper(
             &surfDst
@@ -1757,6 +1761,7 @@ static void RemoveRejected(
 
 static void FillSortedFwdBwd(
     const TaskCommonPar& task
+    , mfxU8 maxFwdRefs
     , DpbIndexes* fwd
     , DpbIndexes* bwd)
 {
@@ -1769,10 +1774,31 @@ static void FillSortedFwdBwd(
     auto IsBwd = [=](Ref ref) noexcept {return ref.first > task.DisplayOrderInGOP; };
 
     DisplayOrderToDPBIndex uniqueRefs;
+    const mfxExtRefListCtrl* refListCtrl = ExtBuffer::Get(task.ctrl);
+    std::set<mfxU8> preferedFwd;
+    if (refListCtrl)
+    {
+        for (const auto& ltr : refListCtrl->PreferredRefList)
+        {
+            if (ltr.FrameOrder == mfxU32(MFX_FRAMEORDER_UNKNOWN))
+                continue;
+
+            for (mfxU8 refIdx = 0; refIdx < mfxU8(task.DPB.size()); refIdx++)
+            {
+                auto& refFrm = task.DPB[refIdx];
+                if (refFrm && refFrm->DisplayOrderInGOP < task.DisplayOrderInGOP
+                    && refFrm->isLTR && refFrm->DisplayOrder == ltr.FrameOrder)
+                {
+                    preferedFwd.insert(refIdx);
+                }
+            }
+        }
+    }
+
     for (mfxU8 refIdx = 0; refIdx < task.DPB.size(); refIdx++)
     {
         auto& refFrm = task.DPB.at(refIdx);
-        if (refFrm && refFrm->TemporalID <= task.TemporalID)
+        if (refFrm && refFrm->TemporalID <= task.TemporalID && preferedFwd.count(refIdx) == 0)
             uniqueRefs.insert({ refFrm->DisplayOrderInGOP, refIdx });
     }
     uniqueRefs.erase(task.DisplayOrderInGOP);
@@ -1788,6 +1814,20 @@ static void FillSortedFwdBwd(
         if (fwd->empty() && firstBwd != uniqueRefs.begin()) {
             auto lastFwd = std::prev(firstBwd);
             fwd->push_back(lastFwd->second);
+        }
+
+        if (!preferedFwd.empty())
+        {
+            if (maxFwdRefs < 2 || fwd->empty())
+                std::copy(preferedFwd.begin(), preferedFwd.end(), std::back_inserter(*fwd));
+            else
+            {
+                // Make sure the nearest STR will be used
+                auto last = fwd->back();
+                fwd->pop_back();
+                std::copy(preferedFwd.begin(), preferedFwd.end(), std::back_inserter(*fwd));
+                fwd->push_back(last);
+            }
         }
     }
 
@@ -2045,6 +2085,23 @@ inline void SetTaskEncodeOrders(
     }
 }
 
+inline mfxU8 CountUniqueSTR(DpbType& taskDPB)
+{
+
+    mfxU8 count = 0;
+    std::set<mfxU32> checkedRef;
+    for (auto& ref : taskDPB)
+    {
+        if (ref && !ref->isLTR && checkedRef.count(ref->DisplayOrder) == 0)
+        {
+            count += 1;
+            checkedRef.insert(ref->DisplayOrder);
+        }
+    }
+
+    return count;
+}
+
 // task - [in/out] Current task object, task.DPB may be modified
 // Return - N/A
 inline void MarkLTR(TaskCommonPar& task)
@@ -2052,24 +2109,20 @@ inline void MarkLTR(TaskCommonPar& task)
     const mfxExtRefListCtrl* refListCtrl = ExtBuffer::Get(task.ctrl);
 
     // If external reflist is not used, check for internal reflist
-    if (!refListCtrl && task.InternalListCtrlPresent) {
+    if (!refListCtrl && task.InternalListCtrlPresent)
+    {
         refListCtrl = &task.InternalListCtrl;
     }
 
     if (!refListCtrl)
         return;
 
-    // Count how many unique STR left in DPB so far
-    // We need to keep at least 1 STR
-    decltype(task.DPB) tmpDPB(task.DPB);
-    std::ignore = std::unique(tmpDPB.begin(), tmpDPB.end());
-    auto numberOfUniqueSTRs = std::count_if(
-        tmpDPB.begin()
-        , tmpDPB.end()
-        , [](const DpbType::value_type& f) { return f && !f->isLTR; });
+    mfxU8 numberOfUniqueSTRs = CountUniqueSTR(task.DPB);
+    if (numberOfUniqueSTRs == 0)
+        return;
 
     const auto& ltrList = refListCtrl->LongTermRefList;
-    for (mfxI32 i = 0; i < 16 && numberOfUniqueSTRs > 1; i++)
+    for (size_t i = 0; i < mfx::size(ltrList); i++)
     {
         const mfxU32 ltrFrameOrder = ltrList[i].FrameOrder;
         if (ltrFrameOrder == static_cast<mfxU32>(MFX_FRAMEORDER_UNKNOWN))
@@ -2085,7 +2138,9 @@ inline void MarkLTR(TaskCommonPar& task)
             && !(*frameToBecomeLTR)->isRejected)
         {
             (*frameToBecomeLTR)->isLTR = true;
-            numberOfUniqueSTRs--;
+            (*frameToBecomeLTR)->LongTermIdx = ltrList[i].LongTermIdx;
+            if (--numberOfUniqueSTRs == 0)
+                break;
         }
     }
 }
@@ -2118,6 +2173,21 @@ inline void MarkRejected(TaskCommonPar& task)
             if (f && f->DisplayOrder == rejectedFrameOrder)
                 f->isRejected = true;
     }
+
+    if (!refListCtrl->ApplyLongTermIdx)
+        return;
+
+    for (const auto& ltr : refListCtrl->LongTermRefList)
+    {
+        if (ltr.FrameOrder == mfxU32(MFX_FRAMEORDER_UNKNOWN))
+            continue;
+
+        for (auto& f : task.DPB)
+        {
+            if (f && f->isLTR && f->LongTermIdx == ltr.LongTermIdx)
+                f->isRejected = true;
+        }
+    }
 }
 
 inline void InitTaskDPB(
@@ -2143,13 +2213,13 @@ inline void SetTaskRefList(
     if (IsI(task.FrameType))
         return;
 
-    DpbIndexes fwd;
-    DpbIndexes bwd;
-    FillSortedFwdBwd(task, &fwd, &bwd);
-
     mfxU8 maxFwdRefs = 0;
     mfxU8 maxBwdRefs = 0;
     std::tie(maxFwdRefs, maxBwdRefs) = GetMaxRefs(task, par);
+
+    DpbIndexes fwd;
+    DpbIndexes bwd;
+    FillSortedFwdBwd(task, maxFwdRefs, &fwd, &bwd);
 
     if (IsP(task.FrameType))
     {
@@ -2219,7 +2289,12 @@ inline void SetTaskDPBRefresh(
             if (slotToRefresh != dpbEnd)
                 refreshRefFrames.at(slotToRefresh - dpbBegin) = 1;
         }
+
+        // If this frame is not put into DPB, it will not be ref-frame
+        if (std::find(refreshRefFrames.begin(), refreshRefFrames.end(), 1) == refreshRefFrames.end())
+            task.FrameType &= ~MFX_FRAMETYPE_REF;
     }
+
 }
 
 class DpbFrameReleaser
@@ -3046,7 +3121,7 @@ mfxStatus General::CheckShift(mfxVideoParam & par)
 
     if (bVideoMem && !fi.Shift)
     {
-        if (fi.FourCC == MFX_FOURCC_P010 || fi.FourCC == MFX_FOURCC_P210)
+        if (fi.FourCC == MFX_FOURCC_P010 || fi.FourCC == MFX_FOURCC_Y210 || fi.FourCC == MFX_FOURCC_P210)
         {
             fi.Shift = 1;
             return MFX_WRN_INCOMPATIBLE_VIDEO_PARAM;
