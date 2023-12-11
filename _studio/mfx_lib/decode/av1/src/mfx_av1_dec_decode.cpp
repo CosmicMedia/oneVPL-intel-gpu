@@ -130,6 +130,7 @@ VideoDECODEAV1::VideoDECODEAV1(VideoCORE* core, mfxStatus* sts)
     , m_first_run(true)
     , m_request()
     , m_response()
+    , m_response_alien()
     , m_is_init(false)
     , m_in_framerate(0)
     , m_is_cscInUse(false)
@@ -621,6 +622,7 @@ mfxStatus VideoDECODEAV1::QueryIOSurf(VideoCORE* core, mfxVideoParam* par, mfxFr
     if (!(par->IOPattern & MFX_IOPATTERN_OUT_SYSTEM_MEMORY))
     {
         sts = MFX_VPX_Utility::QueryIOSurfInternal(par, request);
+        MFX_CHECK_STS(sts);
         uint32_t dpb_size = std::max(8 + par->AsyncDepth, 8);
         if (dpb_size >= request->NumFrameSuggested)
         {
@@ -910,22 +912,15 @@ static mfxStatus CheckFrameInfo(mfxFrameInfo &info)
     switch (info.FourCC)
     {
     case MFX_FOURCC_NV12:
+        MFX_CHECK(info.ChromaFormat == MFX_CHROMAFORMAT_YUV420, MFX_ERR_INVALID_VIDEO_PARAM);
         break;
     case MFX_FOURCC_P010:
+        MFX_CHECK(info.ChromaFormat == MFX_CHROMAFORMAT_YUV420, MFX_ERR_INVALID_VIDEO_PARAM);
         MFX_CHECK(info.Shift == 1, MFX_ERR_INCOMPATIBLE_VIDEO_PARAM);
         break;
     default:
         MFX_CHECK_STS(MFX_ERR_INVALID_VIDEO_PARAM);
     }
-
-    switch (info.ChromaFormat)
-    {
-    case MFX_CHROMAFORMAT_YUV420:
-        break;
-    default:
-        MFX_CHECK_STS(MFX_ERR_INVALID_VIDEO_PARAM);
-    }
-
 
     return MFX_ERR_NONE;
 }
@@ -988,8 +983,8 @@ mfxStatus VideoDECODEAV1::SubmitFrame(mfxBitstream* bs, mfxFrameSurface1* surfac
                  umcRes = m_decoder->GetInfo(&vp);
                  FillVideoParam(&vp, &m_video_par);
                  if (surface_work &&
-                     (m_video_par.mfx.FrameInfo.Width >= surface_work->Info.Width ||
-                      m_video_par.mfx.FrameInfo.Height >= surface_work->Info.Height))
+                     (m_video_par.mfx.FrameInfo.Width > surface_work->Info.Width ||
+                      m_video_par.mfx.FrameInfo.Height > surface_work->Info.Height))
                  {
                      MFX_RETURN(MFX_ERR_INCOMPATIBLE_VIDEO_PARAM);
                  }
@@ -1347,6 +1342,40 @@ mfxStatus VideoDECODEAV1::FillOutputSurface(mfxFrameSurface1** surf_out, mfxFram
 
     surface_out->Info.FrameRateExtD = isShouldUpdate ? m_init_par.mfx.FrameInfo.FrameRateExtD : m_first_par.mfx.FrameInfo.FrameRateExtD;
     surface_out->Info.FrameRateExtN = isShouldUpdate ? m_init_par.mfx.FrameInfo.FrameRateExtN : m_first_par.mfx.FrameInfo.FrameRateExtN;
+
+    const UMC_AV1_DECODER::FrameHeader& fh = pFrame->GetFrameHeader();
+    // extract HDR MasteringDisplayColourVolume info
+    mfxExtMasteringDisplayColourVolume* display_colour = (mfxExtMasteringDisplayColourVolume*)GetExtendedBuffer(surface_out->Data.ExtParam, surface_out->Data.NumExtParam, MFX_EXTBUFF_MASTERING_DISPLAY_COLOUR_VOLUME);
+    if (display_colour && fh.meta_data.hdr_mdcv.existence)
+    {
+        for (size_t i = 0; i < 3; i++)
+        {
+            display_colour->DisplayPrimariesX[i] = (mfxU16)fh.meta_data.hdr_mdcv.display_primaries[i][0];
+            display_colour->DisplayPrimariesY[i] = (mfxU16)fh.meta_data.hdr_mdcv.display_primaries[i][1];
+        }
+        display_colour->WhitePointX = (mfxU16)fh.meta_data.hdr_mdcv.white_point[0];
+        display_colour->WhitePointY = (mfxU16)fh.meta_data.hdr_mdcv.white_point[1];
+        display_colour->MaxDisplayMasteringLuminance = (mfxU32)fh.meta_data.hdr_mdcv.max_luminance;
+        display_colour->MinDisplayMasteringLuminance = (mfxU32)fh.meta_data.hdr_mdcv.min_luminance;
+        display_colour->InsertPayloadToggle = MFX_PAYLOAD_IDR;
+    }
+    else if(display_colour)
+    {
+        display_colour->InsertPayloadToggle = MFX_PAYLOAD_OFF;
+    }
+
+    // extract HDR ContentLightLevel info
+    mfxExtContentLightLevelInfo* content_light = (mfxExtContentLightLevelInfo*)GetExtendedBuffer(surface_out->Data.ExtParam, surface_out->Data.NumExtParam, MFX_EXTBUFF_CONTENT_LIGHT_LEVEL_INFO);
+    if (content_light && fh.meta_data.hdr_cll.existence)
+    {
+        content_light->MaxContentLightLevel = (mfxU16)fh.meta_data.hdr_cll.max_content_light_level;
+        content_light->MaxPicAverageLightLevel = (mfxU16)fh.meta_data.hdr_cll.max_pic_average_light_level;
+        content_light->InsertPayloadToggle = MFX_PAYLOAD_IDR;
+    }
+    else if(content_light)
+    {
+        content_light->InsertPayloadToggle = MFX_PAYLOAD_OFF;
+    }
 
     TRACE_BUFFER_EVENT(MFX_TRACE_API_AV1_OUTPUTINFO_TASK, EVENT_TYPE_INFO, TR_KEY_DECODE_BASIC_INFO,
         surface_out, AV1DecodeSurfaceOutparam, SURFACEOUT_AV1D);

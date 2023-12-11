@@ -2038,7 +2038,6 @@ mfxStatus VAAPIVideoProcessing::Execute_Composition_TiledVideoWall(mfxExecutePar
     m_pipelineParam.resize(pParams->refCount + 1);
     m_pipelineParamID.resize(pParams->refCount + 1, VA_INVALID_ID);
     blend_state.resize(pParams->refCount + 1);
-
     std::vector<VARectangle> input_region;
     input_region.resize(pParams->refCount + 1);
     std::vector<VARectangle> output_region;
@@ -2135,15 +2134,15 @@ mfxStatus VAAPIVideoProcessing::Execute_Composition_TiledVideoWall(mfxExecutePar
             tilingParams[currTileId].numChannels++;
             /* lets define tiles working rectangle */
             if (tilingParams[currTileId].targerRect.x > output_region[i].x)
-                tilingParams[currTileId].targerRect.x =  output_region[i].x;
+                tilingParams[currTileId].targerRect.x = output_region[i].x;
             if (tilingParams[currTileId].targerRect.y > output_region[i].y)
-                tilingParams[currTileId].targerRect.y =  output_region[i].y;
+                tilingParams[currTileId].targerRect.y = output_region[i].y;
             if (tilingParams[currTileId].targerRect.width <
                     (output_region[i].x + output_region[i].width) )
-                tilingParams[currTileId].targerRect.width =  output_region[i].x + output_region[i].width;
+                tilingParams[currTileId].targerRect.width = output_region[i].x + output_region[i].width;
             if (tilingParams[currTileId].targerRect.height <
                     (output_region[i].y + output_region[i].height) )
-                tilingParams[currTileId].targerRect.height =  output_region[i].y + output_region[i].height;
+                tilingParams[currTileId].targerRect.height = output_region[i].y + output_region[i].height;
         }
 
         /* Global alpha and luma key can not be enabled together*/
@@ -2272,9 +2271,9 @@ mfxStatus VAAPIVideoProcessing::Execute_Composition(mfxExecuteParams *pParams)
 
     VAStatus vaSts = VA_STATUS_SUCCESS;
     VASurfaceAttrib attrib;
-    std::vector<VABlendState> blend_state;
     VAImage imagePrimarySurface;
     mfxU8* pPrimarySurfaceBuffer;
+    std::vector<VABlendState> blend_state;
 
     MFX_CHECK_NULL_PTR1( pParams );
     MFX_CHECK_NULL_PTR1( pParams->targetSurface.hdl.first );
@@ -2454,7 +2453,6 @@ mfxStatus VAAPIVideoProcessing::Execute_Composition(mfxExecuteParams *pParams)
     m_pipelineParam.resize(pParams->refCount + 1);
     m_pipelineParamID.resize(pParams->refCount + 1, VA_INVALID_ID);
     blend_state.resize(pParams->refCount + 1);
-
     std::vector<VARectangle> input_region;
     input_region.resize(pParams->refCount + 1);
     std::vector<VARectangle> output_region;

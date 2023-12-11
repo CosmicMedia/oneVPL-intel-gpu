@@ -574,8 +574,8 @@ public:
                 return true;
 
             // Two planes format
-            size_t luma_size_in_bytes_aligned = sw_surface.Data.Pitch * mfx::align2_value(sw_surface.Info.Height, 32);
-            size_t luma_size_in_bytes         = sw_surface.Data.Pitch * mfx::align2_value(sw_surface.Info.Height, 1);
+            size_t luma_size_in_bytes_aligned = (mfxU32)sw_surface.Data.Pitch * mfx::align2_value(sw_surface.Info.Height, 32);
+            size_t luma_size_in_bytes         = (mfxU32)sw_surface.Data.Pitch * mfx::align2_value(sw_surface.Info.Height, 1);
             // Assume that frame data is stored in continuous chunk (Chroma right after Luma)
             // use relative offset between UV and Y, not pitch * height
             // Two cases need to be checked:
@@ -868,8 +868,8 @@ bool VAAPIVideoCORE_T<Base>::IsCmSupported()
 template <class Base>
 bool VAAPIVideoCORE_T<Base>::IsCmCopyEnabledByDefault()
 {
-    // For Linux by default CM copy is ON on RKL/ADL-S
-    return IsCmSupported() && GetHWType() != MFX_HW_DG1 && GetHWType() != MFX_HW_TGL_LP && GetHWType() != MFX_HW_ADL_P;
+    // For Linux by default CM copy is ON on RKL
+    return IsCmSupported() && GetHWType() != MFX_HW_DG1 && GetHWType() != MFX_HW_TGL_LP && GetHWType() != MFX_HW_ADL_P && GetHWType() != MFX_HW_ADL_S;
 }
 
 template <class Base>
@@ -1102,7 +1102,7 @@ mfxStatus VAAPIVideoCORE_T<Base>::ProcessRenderTargets(
 #endif
 
     this->RegisterMids(response, request->Type, !m_bUseExtAllocForHWFrames, pAlloc);
-    m_pcHWAlloc.release();
+    m_pcHWAlloc.release(); // pointer is managed by m_AllocatorQueue
 
     return MFX_ERR_NONE;
 

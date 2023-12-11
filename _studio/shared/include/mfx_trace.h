@@ -595,23 +595,31 @@ extern "C" {
 #ifdef MFX_TRACE_ENABLE
 #define MFX_LTRACE_BUFFER_S(_level, _name, _buffer, _size)  \
     if (_buffer)                                            \
-    MFX_LTRACE_2(_level, _name, "%p[%u]", _buffer, _size)
+    MFX_LTRACE_2(_level, _name, "%p[%lu]", _buffer, _size)
 #else
 #define MFX_LTRACE_BUFFER_S(_level, _name, _buffer, _size)
 #endif
 
 #ifdef MFX_TRACE_ENABLE
-#define MFX_LTRACE_BUFFER(_level, _message, _buffer) \
-{ \
-    if (0 != LogConfig && _buffer) \
-    { \
-        DumpContext context; \
-        std::string _str = context.dump(#_buffer, *_buffer); \
-        MFX_LTRACE_1(_level, "\n" _message, "%s", _str.c_str()) \
-    } \
-    else { \
-        MFX_LTRACE_BUFFER_S(_level, #_buffer, _buffer, sizeof(*_buffer)) \
-    } \
+#define MFX_LTRACE_BUFFER(_level, _message, _buffer)                    \
+{                                                                       \
+    if (0 != LogConfig && _buffer)                                      \
+    {                                                                   \
+        DumpContext context;                                            \
+        std::string _str;                                               \
+        try                                                             \
+        {                                                               \
+            _str = context.dump(#_buffer, *_buffer);                    \
+        }                                                               \
+        catch(...)                                                      \
+        {                                                               \
+            return MFX_ERR_UNKNOWN;                                     \
+        }                                                               \
+        MFX_LTRACE_1(_level, "\n" _message, "%s", _str.c_str())         \
+    }                                                                   \
+else {                                                                  \
+        MFX_LTRACE_BUFFER_S(_level, #_buffer, _buffer, sizeof(*_buffer))\
+    }                                                                   \
 }
 #else
 #define MFX_LTRACE_BUFFER(_level, _buffer) \
@@ -775,10 +783,17 @@ public:
     }
 };
 
-#define MFX_LTRACE_I(_level, _arg1) \
-{ \
-    MFXLTraceI mFXLTraceI; \
-    mFXLTraceI.mfx_ltrace_i(_level, #_arg1, __FUNCTION__, __FILE__, __LINE__,_arg1); \
+#define MFX_LTRACE_I(_level, _arg1)                                                         \
+{                                                                                           \
+    MFXLTraceI mFXLTraceI;                                                                  \
+    try                                                                                     \
+    {                                                                                       \
+        mFXLTraceI.mfx_ltrace_i(_level, #_arg1, __FUNCTION__, __FILE__, __LINE__,_arg1);    \
+    }                                                                                       \
+    catch(...)                                                                              \
+    {                                                                                       \
+        std::cerr << "Trace failed!" << '\n';                                               \
+    }                                                                                       \
 }
 #else
 #define MFX_LTRACE_I(_level, _arg1) \

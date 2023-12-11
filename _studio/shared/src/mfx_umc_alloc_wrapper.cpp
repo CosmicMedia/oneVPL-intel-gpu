@@ -1525,6 +1525,11 @@ void SurfaceSource::RemoveBinding(const mfxFrameSurface1 & surf)
 
 mfxFrameSurface1* SurfaceSource::GetDecoderSurface(UMC::FrameMemID index)
 {
+    if (index < 0)
+    {
+        return nullptr;
+    }
+
     auto it = m_umc2mfx_memid.find(index);
     if (it == std::end(m_umc2mfx_memid))
     {
@@ -2302,6 +2307,7 @@ void SurfaceSource::SetFreeSurfaceAllowedFlag(bool flag)
     if (!m_redirect_to_vpl_path != !!m_umc_allocator_adapter)
     {
         std::ignore = MFX_STS_TRACE(MFX_ERR_NOT_INITIALIZED);
+        return;
     }
 
     if (m_redirect_to_vpl_path)

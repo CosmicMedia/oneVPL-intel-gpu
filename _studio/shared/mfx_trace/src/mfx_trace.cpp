@@ -252,7 +252,8 @@ mfxTraceU32 MFXTrace_GetRegistryParams(void)
                 {
                     if (!iter->second.empty())
                     {
-                        strcpy(VplLogPath, iter->second.c_str());
+                        strncpy(VplLogPath, iter->second.c_str(), VPLLOG_BUFFER_SIZE - 1);
+                        VplLogPath[VPLLOG_BUFFER_SIZE - 1] = 0;
                     }
                     else
                     {
@@ -582,6 +583,10 @@ mfxTraceU32 MFXTrace_EndTask(mfxTraceStaticHandle *static_handle,
         category = static_handle->category;
         level    = static_handle->level;
     }
+    else
+    {
+        return 1;
+    }
 
     mfxTraceU32 sts = 0, res = 0;
     mfxTraceU32 i = 0;
@@ -592,7 +597,7 @@ mfxTraceU32 MFXTrace_EndTask(mfxTraceStaticHandle *static_handle,
         {
             if (!MFXTrace_IsPrintableCategoryAndLevel(g_TraceAlgorithms[i].m_OutputInitilized, level)) continue;
 
-            res = g_TraceAlgorithms[i].m_EndTaskFn(static_handle, task_handle);
+            res = (g_TraceAlgorithms[i].m_EndTaskFn) ? g_TraceAlgorithms[i].m_EndTaskFn(static_handle, task_handle) : 0;
             if (!sts && res) sts = res;
         }
     }

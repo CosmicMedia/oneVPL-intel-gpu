@@ -55,8 +55,11 @@ namespace UMC_AV1_DECODER
         , saved_clip_info_height(0)
         , clip_info_size_saved(false)
         , m_prev_frame_header_exist(false)
+        , m_specified_anchor_Idx(0)
+        , m_isAnchor(false)
     {
         outputed_frames.clear();
+        m_prev_frame_header = {};
     }
 
     AV1Decoder::~AV1Decoder()
@@ -102,6 +105,14 @@ namespace UMC_AV1_DECODER
     {
         if (!old_sps || !new_sps)
         {
+            return false;
+        }
+        if (old_sps->max_frame_width == 0 || old_sps->max_frame_height == 0)
+        {
+            old_sps->max_frame_width = new_sps->max_frame_width;
+            old_sps->max_frame_height = new_sps->max_frame_height;
+            old_sps->seq_profile = new_sps->seq_profile;
+            old_sps->film_grain_param_present = new_sps->film_grain_param_present;
             return false;
         }
 
@@ -674,14 +685,10 @@ namespace UMC_AV1_DECODER
                     *sequence_header = SequenceHeader{};
                     bs.ReadSequenceHeader(*sequence_header);
 
-                    if (!old_seqHdr && pPrevFrame)
+                    if (!old_seqHdr)
                     {
                         old_seqHdr.reset(new SequenceHeader());
-                        auto prev_seqHdr = &pPrevFrame->GetSeqHeader();
-                        old_seqHdr->max_frame_width = prev_seqHdr->max_frame_width;
-                        old_seqHdr->max_frame_height = prev_seqHdr->max_frame_height;
-                        old_seqHdr->seq_profile = prev_seqHdr->seq_profile;
-                        old_seqHdr->film_grain_param_present = prev_seqHdr->film_grain_param_present;
+                        Update_drc(sequence_header.get());
                     }
 
                     // check if sequence header has been changed
@@ -810,6 +817,9 @@ namespace UMC_AV1_DECODER
                         break;
                     }
                 }
+                case OBU_METADATA:
+                    bs.ReadMetaData(fh);
+                    break;
                 default:
                     break;
                 }
