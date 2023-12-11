@@ -1181,7 +1181,7 @@ namespace Base
             bool CBRSupport            = false;
             bool VBRSupport            = false;
             bool ICQSupport            = false;
-			bool QVBRSupport           = false;
+            bool QVBRSupport           = false;
         } msdk;
     };
 

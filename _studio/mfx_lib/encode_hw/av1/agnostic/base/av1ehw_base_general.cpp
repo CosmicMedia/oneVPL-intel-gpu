@@ -125,7 +125,7 @@ void General::SetSupported(ParamSupport& blocks)
         MFX_COPY_FIELD(TargetBitDepthChroma);
         MFX_COPY_FIELD(LowDelayBRC);
         MFX_COPY_FIELD(ScenarioInfo);
-		MFX_COPY_FIELD(QVBRQuality);
+        MFX_COPY_FIELD(QVBRQuality);
     });
 
     // keep it temporally for backward compability
@@ -373,7 +373,7 @@ void General::SetInherited(ParamInheritance& par)
             INHERIT_OPT(NumRefActiveBL1[i]);
         }
 
-		mfxU16 RC = parInit.mfx.RateControlMethod * (parInit.mfx.RateControlMethod == parReset.mfx.RateControlMethod);
+        mfxU16 RC = parInit.mfx.RateControlMethod * (parInit.mfx.RateControlMethod == parReset.mfx.RateControlMethod);
 
         if (RC == MFX_RATECONTROL_QVBR)
             INHERIT_OPT(QVBRQuality);
@@ -2851,7 +2851,7 @@ void SetDefaultBRC(
     bool bSetRCPar = (par.mfx.RateControlMethod == MFX_RATECONTROL_CBR
         || par.mfx.RateControlMethod == MFX_RATECONTROL_VBR);
     bool bSetICQ  = (par.mfx.RateControlMethod == MFX_RATECONTROL_ICQ);
-	bool bSetQVBR  = (par.mfx.RateControlMethod == MFX_RATECONTROL_QVBR);
+    bool bSetQVBR  = (par.mfx.RateControlMethod == MFX_RATECONTROL_QVBR);
 
     if (bSetQP)
     {
@@ -2879,10 +2879,10 @@ void SetDefaultBRC(
 
     if (pCO3)
     {
-		if (bSetQVBR) 
-		{
-        	SetDefault<mfxU16>(pCO3->QVBRQuality, 26);
-    	}
+        if (bSetQVBR) 
+        {
+            SetDefault<mfxU16>(pCO3->QVBRQuality, 26);
+        }
 
         defPar.base.GetQPOffset(defPar, pCO3->EnableQPOffset, pCO3->QPOffset);
         SetDefault(pCO3->LowDelayBRC, MFX_CODINGOPTION_OFF);
@@ -3145,7 +3145,7 @@ mfxStatus General::CheckRateControl(
         , !!defPar.caps.msdk.VBRSupport * MFX_RATECONTROL_VBR
         , !!defPar.caps.msdk.CQPSupport * MFX_RATECONTROL_CQP
         , !!defPar.caps.msdk.ICQSupport * MFX_RATECONTROL_ICQ
-		, !!defPar.caps.msdk.QVBRSupport * MFX_RATECONTROL_QVBR
+        , !!defPar.caps.msdk.QVBRSupport * MFX_RATECONTROL_QVBR
         );
     MFX_CHECK(bSupported, MFX_ERR_UNSUPPORTED);
 
