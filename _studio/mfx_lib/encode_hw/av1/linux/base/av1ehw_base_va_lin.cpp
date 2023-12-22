@@ -29,7 +29,7 @@ using namespace AV1EHW;
 using namespace AV1EHW::Base;
 using namespace AV1EHW::Linux::Base;
 
-mfxStatus DDI_VA::SetDDIID(mfxU16 bitDepth, mfxU16 targetChromaFormat)
+mfxStatus DDI_VA::SetDDIID(mfxU16 targetBitDepth, mfxU16 targetChromaFormat)
 {
     MFX_CHECK(!m_vaid, MFX_ERR_NONE);
 
@@ -71,13 +71,13 @@ mfxStatus DDI_VA::SetDDIID(mfxU16 bitDepth, mfxU16 targetChromaFormat)
 
     // Check that list of VAIDs contains VAID for resulting BitDepth, ChromaFormat
     bool bSupported =
-        VAIDSupported[bEncSliceLPSupported].count(bitDepth)
-        && VAIDSupported[bEncSliceLPSupported].at(bitDepth).count(targetChromaFormat);
+        VAIDSupported[bEncSliceLPSupported].count(targetBitDepth)
+        && VAIDSupported[bEncSliceLPSupported].at(targetBitDepth).count(targetChromaFormat);
 
     MFX_CHECK(bSupported, MFX_ERR_UNSUPPORTED);
 
     // Choose and return VAID
-    m_vaid = const_cast<VAID *>(&VAIDSupported[bEncSliceLPSupported].at(bitDepth).at(targetChromaFormat));
+    m_vaid = const_cast<VAID *>(&VAIDSupported[bEncSliceLPSupported].at(targetBitDepth).at(targetChromaFormat));
 
     return MFX_ERR_NONE;
 }
@@ -114,17 +114,10 @@ void DDI_VA::Query1NoCaps(const FeatureBlocks& /*blocks*/, TPushQ1 Push)
 
         m_hw = Glob::VideoCore::Get(strg).GetHWType();
         const mfxU16 bitDepth     = m_pDefaults->base.GetBitDepthLuma(*m_pDefaults);
-        const mfxU16 profile      = par.mfx.CodecProfile;
-        const mfxExtCodingOption3* pCO3 = ExtBuffer::Get(m_pDefaults->mvp);
-        mfxU16 targetChromaFormat = MFX_CHROMAFORMAT_YUV420;
+        const mfxU16 chromaFormat = par.mfx.FrameInfo.ChromaFormat;
 
-        SetIf(targetChromaFormat, profile == MFX_PROFILE_AV1_HIGH, MFX_CHROMAFORMAT_YUV444);
-        if (pCO3)
-        {
-            SetIf(targetChromaFormat, !pCO3->TargetChromaFormatPlus1, pCO3->TargetChromaFormatPlus1 - 1);
-        }
 
-        MFX_SAFE_CALL(SetDDIID(bitDepth, targetChromaFormat));
+        MFX_SAFE_CALL(SetDDIID(bitDepth, chromaFormat));
 
         return MFX_ERR_NONE;
     });
@@ -438,6 +431,7 @@ mfxStatus DDI_VA::QueryCaps()
 
     auto attribValEncAV1 = *(VAConfigAttribValEncAV1 *)(&attrs[idx_map[(VAConfigAttribType)VAConfigAttribEncAV1]].value);
     m_caps.CDEFChannelStrengthSupport = attribValEncAV1.bits.support_cdef_channel_strength ? 1 : 0;
+    m_caps.AV1ToolSupportFlags.fields.PaletteMode = attribValEncAV1.bits.support_palette_mode ? 1 : 0;
 
     auto attribValEncAV1Ext1 = *(VAConfigAttribValEncAV1Ext1 *)(&attrs[idx_map[(VAConfigAttribType)VAConfigAttribEncAV1Ext1]].value);
     m_caps.SegmentFeatureSupport               = attribValEncAV1Ext1.bits.segment_feature_support;
