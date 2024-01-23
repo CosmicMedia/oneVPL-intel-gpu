@@ -172,6 +172,12 @@ void General::SetSupported(ParamSupport& blocks)
         auto& buf_dst = *(mfxExtCodingOption2*)pDst;
 
         MFX_COPY_FIELD(BRefType);
+        MFX_COPY_FIELD(MinQPI);
+        MFX_COPY_FIELD(MinQPP);
+        MFX_COPY_FIELD(MinQPB);
+        MFX_COPY_FIELD(MaxQPI);
+        MFX_COPY_FIELD(MaxQPP);
+        MFX_COPY_FIELD(MaxQPB);
     });
 
     blocks.m_ebCopySupported[MFX_EXTBUFF_ENCODER_RESET_OPTION].emplace_back(
@@ -366,6 +372,12 @@ void General::SetInherited(ParamInheritance& par)
     {
         INIT_EB(mfxExtCodingOption2);
         INHERIT_OPT(BRefType);
+        INHERIT_OPT(MinQPI);
+        INHERIT_OPT(MinQPP);
+        INHERIT_OPT(MinQPB);
+        INHERIT_OPT(MaxQPI);
+        INHERIT_OPT(MaxQPP);
+        INHERIT_OPT(MaxQPB);
     });
 
     par.m_ebInheritDefault[MFX_EXTBUFF_CODING_OPTION3].emplace_back(
@@ -1301,6 +1313,7 @@ void General::AllocTask(const FeatureBlocks& blocks, TPushAT Push)
     {
         task.Insert(Task::Common::Key, new Task::Common::TRef);
         task.Insert(Task::FH::Key, new MakeStorable<Task::FH::TRef>);
+        task.Insert(Task::EncodedInfo::Key, new MakeStorable<Task::EncodedInfo::TRef>);
         return MFX_ERR_NONE;
     });
 }
@@ -1446,6 +1459,7 @@ void General::PostReorderTask(const FeatureBlocks& blocks, TPushPostRT Push)
             , StorageW& s_task) -> mfxStatus
     {
         auto& task = Task::Common::Get(s_task);
+        auto& encodedInfo = Task::EncodedInfo::Get(s_task);
 
         if (global.Contains(Glob::AllocRaw::Key))
         {
@@ -1462,7 +1476,7 @@ void General::PostReorderTask(const FeatureBlocks& blocks, TPushPostRT Push)
 
         auto& fh = Glob::FH::Get(global);
         auto  def = GetRTDefaults(global);
-        ConfigureTask(task, def, recPool);
+        ConfigureTask(task, def, recPool, encodedInfo);
 
         auto& framesToShowInfo = Glob::FramesToShowInfo::Get(global);
         SetTaskFramesToShow(task, framesToShowInfo);
@@ -1721,11 +1735,10 @@ void General::GetVideoParam(const FeatureBlocks& blocks, TPushGVP Push)
         , [this, &blocks](mfxVideoParam& out, StorageR& global) -> mfxStatus
     {
         out.mfx.LowPower = MFX_CODINGOPTION_ON;
-        if (HaveRABFrames(out))
+        if (out.mfx.RateControlMethod == MFX_RATECONTROL_CBR || out.mfx.RateControlMethod == MFX_RATECONTROL_VBR)
         {
             auto defPar = GetRTDefaults(global);
-            const mfxU32 numCacheFrames = (defPar.base.GetBRefType(defPar) != MFX_B_REF_PYRAMID) ? mfxU32(2)
-                : mfxU32(defPar.base.GetNumBPyramidLayers(defPar)) + 1;
+            const mfxU32 numCacheFrames = defPar.base.GetTemporalUnitCacheSize(defPar);
             BufferSizeInKB(out.mfx) = BufferSizeInKB(out.mfx) * numCacheFrames;
         }
 
@@ -2059,9 +2072,22 @@ inline void SetTaskBRCParams(
     if(par.mfx.RateControlMethod == MFX_RATECONTROL_CQP)
         return;
 
-    const mfxExtAV1AuxData& auxPar = ExtBuffer::Get(par);
-    task.MinBaseQIndex             = auxPar.QP.MinBaseQIndex;
-    task.MaxBaseQIndex             = auxPar.QP.MaxBaseQIndex;
+    const mfxExtCodingOption2& CO2 = ExtBuffer::Get(par);
+    if (task.FrameType & MFX_FRAMETYPE_I)
+    {
+        task.MinBaseQIndex = CO2.MinQPI;
+        task.MaxBaseQIndex = CO2.MaxQPI;
+    }
+    else if (task.FrameType & MFX_FRAMETYPE_P)
+    {
+        task.MinBaseQIndex = CO2.MinQPP;
+        task.MaxBaseQIndex = CO2.MaxQPP;
+    }
+    else if (task.FrameType & MFX_FRAMETYPE_B)
+    {
+        task.MinBaseQIndex = CO2.MinQPB;
+        task.MaxBaseQIndex = CO2.MaxQPB;
+    }
 }
 
 inline void SetTaskEncodeOrders(
@@ -2141,6 +2167,22 @@ inline void MarkLTR(TaskCommonPar& task)
             if (--numberOfUniqueSTRs == 0)
                 break;
         }
+    }
+}
+
+inline void UpdateLTRInfo(TaskCommonPar& task, EncodedInfoAv1& encodedInfo)
+{
+    encodedInfo.DisplayOrder = task.DisplayOrder;
+
+    auto LTRframe = std::find_if(
+        task.DPB.begin()
+        , task.DPB.end()
+        , [encodedInfo](const DpbType::value_type& f) {
+            return f && f->isLTR && f->DisplayOrder == encodedInfo.DisplayOrder;});
+    if (LTRframe != task.DPB.end())
+    {
+        encodedInfo.isLTR = true;
+        encodedInfo.LongTermIdx = (*LTRframe)->LongTermIdx;
     }
 }
 
@@ -2257,7 +2299,7 @@ inline void SetTaskDPBRefresh(
     auto& refreshRefFrames = task.RefreshFrameFlags;
 
     if (IsI(task.FrameType))
-        std::fill(refreshRefFrames.begin(), refreshRefFrames.end(), static_cast<mfxU8>(1));
+        std::fill(refreshRefFrames.begin(), refreshRefFrames.end(), mfxU8(1));
     else if (IsRef(task.FrameType))
     {
         // At first find all rejected LTRs to refresh them with current frame
@@ -2292,6 +2334,10 @@ inline void SetTaskDPBRefresh(
         // If this frame is not put into DPB, it will not be ref-frame
         if (std::find(refreshRefFrames.begin(), refreshRefFrames.end(), 1) == refreshRefFrames.end())
             task.FrameType &= ~MFX_FRAMETYPE_REF;
+        else
+        {
+            std::fill(refreshRefFrames.begin() + task.DPB.size(), refreshRefFrames.end(), mfxU8(1));
+        }
     }
 
 }
@@ -2383,7 +2429,8 @@ inline void SetTaskTCBRC(
 void General::ConfigureTask(
     TaskCommonPar& task
     , const Defaults::Param& dflts
-    , IAllocation& recPool)
+    , IAllocation& recPool
+    , EncodedInfoAv1& encodedInfo)
 {
     task.StatusReportId = std::max<mfxU32>(1, m_prevTask.StatusReportId + 1);
 
@@ -2408,6 +2455,7 @@ void General::ConfigureTask(
 
     UpdateDPB(m_prevTask.DPB, reinterpret_cast<DpbFrame&>(task), task.RefreshFrameFlags, DpbFrameReleaser(recPool));
     MarkLTR(m_prevTask);
+    UpdateLTRInfo(m_prevTask, encodedInfo);
 }
 
 static bool HaveL1(DpbType const & dpb, mfxI32 displayOrderInGOP)
@@ -2893,7 +2941,7 @@ void SetDefaultGOP(
         SetIf(pCO3->PRefType, !pCO3->PRefType, [&]() { return defPar.base.GetPRefType(defPar); });
         
         // change default to LDB when RAB
-        if (General::HaveRABFrames(par))
+        if (HaveRABFrames(par))
             SetDefault<mfxU16>(pCO3->GPB, MFX_CODINGOPTION_ON);
         else
             SetDefault<mfxU16>(pCO3->GPB, MFX_CODINGOPTION_OFF);
@@ -2944,11 +2992,14 @@ void SetDefaultBRC(
         SetDefault<mfxU16>(par.mfx.ICQQuality, 26);
     }
 
-    mfxExtAV1AuxData* pAuxPar = ExtBuffer::Get(par);
-    if (pAuxPar && par.mfx.RateControlMethod != MFX_RATECONTROL_CQP)
+    if (pCO2 && par.mfx.RateControlMethod != MFX_RATECONTROL_CQP)
     {
-        SetDefault(pAuxPar->QP.MinBaseQIndex, AV1_MIN_Q_INDEX);
-        SetDefault(pAuxPar->QP.MaxBaseQIndex, AV1_MAX_Q_INDEX);
+        SetDefault(pCO2->MinQPI, AV1_MIN_Q_INDEX);
+        SetDefault(pCO2->MinQPP, AV1_MIN_Q_INDEX);
+        SetDefault(pCO2->MinQPB, AV1_MIN_Q_INDEX);
+        SetDefault(pCO2->MaxQPI, AV1_MAX_Q_INDEX);
+        SetDefault(pCO2->MaxQPP, AV1_MAX_Q_INDEX);
+        SetDefault(pCO2->MaxQPB, AV1_MAX_Q_INDEX);
     }
 
     if (pCO3)
@@ -3163,12 +3214,13 @@ mfxU32 CheckBufferSizeInKB(mfxVideoParam& par, const Defaults::Param& defPar)
     if (!par.mfx.BufferSizeInKB)
         return changed;
 
-    mfxU32     minSizeInKB   = 0;
-    const bool bCqpOrIcq     = par.mfx.RateControlMethod == MFX_RATECONTROL_CQP
+    mfxU32     minSizeInKB = 0;
+    const bool bCqpOrIcq   = par.mfx.RateControlMethod == MFX_RATECONTROL_CQP
         || par.mfx.RateControlMethod == MFX_RATECONTROL_ICQ;
     if (bCqpOrIcq)
     {
-        minSizeInKB = General::GetRawBytes(defPar) / 1000;
+        const mfxU32 numCacheFrames = defPar.base.GetTemporalUnitCacheSize(defPar);
+        minSizeInKB =  General::GetRawBytes(defPar) / 1000 * numCacheFrames;
     }
     else
     {
@@ -3188,14 +3240,15 @@ mfxU32 CheckBufferSizeInKB(mfxVideoParam& par, const Defaults::Param& defPar)
     return changed;
 }
 
-inline mfxU32 CheckAndFixQP(mfxU16& qp, const mfxU16 minQP, const mfxU16 maxQP)
+template<class T, class U>
+inline mfxU32 CheckAndFixQP(T& qp, const U minQP, const U maxQP)
 {
     mfxU32 changed = 0;
 
     if (qp)
     {
-        changed += CheckMinOrClip<mfxU16>(qp, minQP);
-        changed += CheckMaxOrClip<mfxU16>(qp, maxQP);
+        changed += CheckMinOrClip<T, U>(qp, minQP);
+        changed += CheckMaxOrClip<T, U>(qp, maxQP);
     }
 
     return changed;
@@ -3249,12 +3302,31 @@ mfxStatus General::CheckRateControl(
     mfxExtCodingOption2* pCO2 = ExtBuffer::Get(par);
     if (pCO2)
     {
-        changed += CheckOrZero<mfxU8>(pCO2->MinQPI, 0, minQP);
-        changed += CheckOrZero<mfxU8>(pCO2->MaxQPI, 0, maxQP);
-        changed += CheckOrZero<mfxU8>(pCO2->MinQPP, 0, minQP);
-        changed += CheckOrZero<mfxU8>(pCO2->MaxQPP, 0, maxQP);
-        changed += CheckOrZero<mfxU8>(pCO2->MinQPB, 0, minQP);
-        changed += CheckOrZero<mfxU8>(pCO2->MaxQPB, 0, maxQP);
+        // some apps would only set MinQP or MaxQP
+        bool bInvalid = (pCO2->MaxQPI && pCO2->MinQPI && pCO2->MaxQPI < pCO2->MinQPI)
+            || (pCO2->MaxQPP && pCO2->MinQPP && pCO2->MaxQPP < pCO2->MinQPP)
+            || (pCO2->MaxQPB && pCO2->MinQPB && pCO2->MaxQPB < pCO2->MinQPB);
+
+        MFX_CHECK(!bInvalid, MFX_ERR_INVALID_VIDEO_PARAM);
+
+        if (bCQP)
+        {
+            changed += CheckOrZero<mfxU8>(pCO2->MinQPI, 0);
+            changed += CheckOrZero<mfxU8>(pCO2->MinQPP, 0);
+            changed += CheckOrZero<mfxU8>(pCO2->MinQPB, 0);
+            changed += CheckOrZero<mfxU8>(pCO2->MaxQPI, 0);
+            changed += CheckOrZero<mfxU8>(pCO2->MaxQPP, 0);
+            changed += CheckOrZero<mfxU8>(pCO2->MaxQPB, 0);
+        }
+        else
+        {
+            changed += CheckAndFixQP(pCO2->MinQPI, minQP, maxQP);
+            changed += CheckAndFixQP(pCO2->MinQPP, minQP, maxQP);
+            changed += CheckAndFixQP(pCO2->MinQPB, minQP, maxQP);
+            changed += CheckAndFixQP(pCO2->MaxQPI, minQP, maxQP);
+            changed += CheckAndFixQP(pCO2->MaxQPP, minQP, maxQP);
+            changed += CheckAndFixQP(pCO2->MaxQPB, minQP, maxQP);
+        }
     }
 
     mfxExtCodingOption3* pCO3 = ExtBuffer::Get(par);
@@ -3284,25 +3356,6 @@ mfxStatus General::CheckRateControl(
         };
 
         changed += !!std::count_if(std::begin(pCO3->QPOffset), std::end(pCO3->QPOffset), CheckQPOffset);
-    }
-
-    mfxExtAV1AuxData* pAuxPar = ExtBuffer::Get(par);
-    if (pAuxPar)
-    {
-        if (bCQP)
-        {
-            changed += CheckOrZero<mfxU8>(pAuxPar->QP.MinBaseQIndex, 0);
-            changed += CheckOrZero<mfxU8>(pAuxPar->QP.MaxBaseQIndex, 0);
-        }
-        else
-        {
-            if (pAuxPar->QP.MinBaseQIndex || pAuxPar->QP.MaxBaseQIndex)
-            {
-                changed += CheckRangeOrClip(pAuxPar->QP.MinBaseQIndex, minQP, maxQP);
-                changed += CheckRangeOrClip(pAuxPar->QP.MaxBaseQIndex, minQP, maxQP);
-                changed += CheckMaxOrClip(pAuxPar->QP.MinBaseQIndex, pAuxPar->QP.MaxBaseQIndex);
-            }
-        }
     }
 
     MFX_CHECK(!changed, MFX_WRN_INCOMPATIBLE_VIDEO_PARAM);

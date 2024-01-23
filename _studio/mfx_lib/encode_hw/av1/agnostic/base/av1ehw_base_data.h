@@ -870,6 +870,11 @@ namespace Base
 
     inline bool isValid(DpbFrame const & frame) { return IDX_INVALID != frame.Rec.Idx; }
 
+    inline bool HaveRABFrames(const mfxVideoParam& par)
+    {
+        return par.mfx.GopPicSize > 2 && par.mfx.GopRefDist > 1;
+    }
+
     inline std::tuple<mfxU32, mfxU32> GetRealResolution(const mfxVideoParam& vp)
     {
         const mfxExtAV1ResolutionParam* pRsPar  = ExtBuffer::Get(vp);
@@ -1236,6 +1241,7 @@ namespace Base
         TChain<mfxU16> GetNumTemporalLayers;
         TChain<mfxU8>  GetNumReorderFrames;
         TChain<bool>   GetNonStdReordering;
+        TChain<mfxU32> GetTemporalUnitCacheSize;
         TChain<std::tuple<mfxU16, mfxU16, mfxU16>> GetMaxNumRef;
         TChain<std::tuple<mfxU32, mfxU32>>         GetFrameRate;
         TChain<std::tuple<mfxU16, mfxU16, mfxU16>> GetQPMFX; //I,P,B
@@ -1385,6 +1391,9 @@ namespace Base
         TUsedRefList UsedRefListL0 = {};
         TUsedRefList UsedRefListL1 = {};
         mfxU16       QpY           = 0;
+        mfxU32       DisplayOrder  = 0;
+        mfxU16       LongTermIdx   = MFX_LONGTERM_IDX_NO_IDX;
+        bool         isLTR         = false;
     };
 
     struct Task

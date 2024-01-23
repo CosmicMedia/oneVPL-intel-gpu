@@ -434,6 +434,7 @@ typedef enum {
     MFX_SURFACE_TYPE_D3D11_TEX2D           = 2,      /*!< D3D11 surface of type ID3D11Texture2D. */
     MFX_SURFACE_TYPE_VAAPI                 = 3,      /*!< VA-API surface. */
     MFX_SURFACE_TYPE_OPENCL_IMG2D          = 4,      /*!< OpenCL 2D image (cl_mem). */
+    MFX_SURFACE_TYPE_D3D12_TEX2D           = 5,      /*!< D3D12 surface of type ID3D12Resource with 2D texture type. */
 } mfxSurfaceType;
 
 /*! This enumerator specifies the sharing modes which are allowed for importing or exporting shared surfaces. */
@@ -2376,6 +2377,10 @@ enum {
     See the mfxExtSurfaceOpenCLImg2DExportDescription structure for more details.
     */
     MFX_EXTBUFF_EXPORT_SHARING_DESC_OCL = MFX_MAKEFOURCC('E', 'O', 'C', 'L'),
+    /*!
+    See the mfxExtSurfaceD3D12Tex2DExportDescription structure for more details.
+    */
+    MFX_EXTBUFF_EXPORT_SHARING_DESC_D3D12 = MFX_MAKEFOURCC('E', 'D', '1', '2'),
 #endif
 };
 
@@ -2966,7 +2971,7 @@ MFX_PACK_BEGIN_USUAL_STRUCT()
 
    @note Not all implementations of the encoder support LongTermIdx and ApplyLongTermIdx fields in this structure. The application must use
          query mode 1 to determine if such functionality is supported. To do this, the application must attach this extended buffer to the
-         mfxVideoParam structure and call the MFXVideoENCODE_Query function. If the function returns MFX_ERR_NONE and these fields were set to one,
+         mfxVideoParam structure and call the MFXVideoENCODE_Query function. If the function returns MFX_ERR_NONE and these fields were set to non-zero value,
          then the functionality is supported. If the function fails or sets fields to zero, then the functionality is not supported.
 
 */
