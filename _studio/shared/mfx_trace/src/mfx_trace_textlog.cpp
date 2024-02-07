@@ -19,7 +19,6 @@
 // SOFTWARE.
 
 #include "mfx_trace.h"
-#include "mfx_utils_perf.h"
 
 #ifdef MFX_TRACE_ENABLE_TEXTLOG
 extern "C"
@@ -33,7 +32,6 @@ extern "C"
 #include "unistd.h"
 
 /*------------------------------------------------------------------------------*/
-
 static FILE* g_mfxTracePrintfFile = NULL;
 static mfxTraceChar g_mfxTracePrintfFileName[MAX_PATH] =
     MFT_TRACE_PATH_TO_TEMP_LIBLOG;
@@ -43,9 +41,17 @@ static mfxTraceU32 g_PrintfSuppress =
     MFX_TRACE_TEXTLOG_SUPPRESS_LEVEL;
 
 bool trace_bEnable = false;
+double timeStamp = 0;
 std::string trace_autotag = "intialized";
-
+static std::map<std::pair<uint64_t, std::string>, std::vector<TickTime>*> records;
 /*------------------------------------------------------------------------------*/
+void startTick(const std::string& tag)
+{
+}
+
+void stopTick(const std::string& tag)
+{
+}
 
 
 mfxTraceU32 MFXTraceTextLog_GetRegistryParams(void)
@@ -175,13 +181,17 @@ mfxTraceU32 MFXTraceTextLog_vDebugMessage(mfxTraceStaticHandle* static_handle,
     {
         p_str = mfx_trace_sprintf(p_str, len, "%s: ", category);
     }
-    if (!(g_PrintfSuppress & MFX_TRACE_TEXTLOG_SUPPRESS_LEVEL))
-    {
-        p_str = mfx_trace_sprintf(p_str, len, "LEV_%d: ", level);
-    }
     if (function_name && !(g_PrintfSuppress & MFX_TRACE_TEXTLOG_SUPPRESS_FUNCTION_NAME) && !(format && ((strcmp(format, exitChr) == 0) || (strcmp(format, enterChr) == 0))))
     {
         p_str = mfx_trace_sprintf(p_str, len, "%-60s: ", function_name);
+    }
+    if (level == MFX_TRACE_LEVEL_CRITICAL_INFO)
+    {
+        p_str = mfx_trace_sprintf(p_str, len, "%s", "[Critical] ");
+    }
+    else if (level == MFX_TRACE_LEVEL_WARNING_INFO)
+    {
+        p_str = mfx_trace_sprintf(p_str, len, "%s", "[Warning] ");
     }
     if (message && strlen(message) != 0)
     {

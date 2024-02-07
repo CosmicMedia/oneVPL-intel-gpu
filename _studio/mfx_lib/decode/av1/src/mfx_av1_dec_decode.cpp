@@ -234,6 +234,7 @@ mfxStatus VideoDECODEAV1::Init(mfxVideoParam* par)
         bool is_fourcc_supported = false;
         is_fourcc_supported =
             (videoProcessing->Out.FourCC == MFX_FOURCC_RGB4
+                || videoProcessing->Out.FourCC == MFX_FOURCC_RGBP
                 || videoProcessing->Out.FourCC == MFX_FOURCC_NV12
                 || videoProcessing->Out.FourCC == MFX_FOURCC_P010
                 || videoProcessing->Out.FourCC == MFX_FOURCC_YUY2
@@ -779,6 +780,7 @@ mfxStatus VideoDECODEAV1::GetDecodeStat(mfxDecodeStat* stat)
 
 mfxStatus VideoDECODEAV1::DecodeFrameCheck(mfxBitstream* bs, mfxFrameSurface1* surface_work, mfxFrameSurface1** surface_out, MFX_ENTRY_POINT* entry_point)
 {
+    MFX_AUTO_LTRACE(MFX_TRACE_LEVEL_INTERNAL, __FUNCTION__);
     MFX_CHECK_NULL_PTR1(entry_point);
 
     std::lock_guard<std::mutex> guard(m_guard);
@@ -930,6 +932,7 @@ static mfxStatus CheckFrameInfo(mfxFrameInfo &info)
     {
     case MFX_FOURCC_NV12:
         MFX_CHECK(info.ChromaFormat == MFX_CHROMAFORMAT_YUV420, MFX_ERR_INVALID_VIDEO_PARAM);
+        MFX_CHECK(info.Shift == 0, MFX_ERR_INCOMPATIBLE_VIDEO_PARAM);
         break;
     case MFX_FOURCC_P010:
         MFX_CHECK(info.ChromaFormat == MFX_CHROMAFORMAT_YUV420, MFX_ERR_INVALID_VIDEO_PARAM);
@@ -944,6 +947,7 @@ static mfxStatus CheckFrameInfo(mfxFrameInfo &info)
 
 mfxStatus VideoDECODEAV1::SubmitFrame(mfxBitstream* bs, mfxFrameSurface1* surface_work, mfxFrameSurface1** surface_out)
 {
+    MFX_AUTO_LTRACE(MFX_TRACE_LEVEL_INTERNAL, __FUNCTION__);
     bool allow_null_work_surface = SupportsVPLFeatureSet(*m_core);
 
     if (allow_null_work_surface)

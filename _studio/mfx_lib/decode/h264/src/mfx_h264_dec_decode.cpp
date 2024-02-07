@@ -275,6 +275,7 @@ mfxStatus VideoDECODEH264::Init(mfxVideoParam *par)
 
         bool is_fourcc_supported =
                   (  videoProcessing->Out.FourCC == MFX_FOURCC_RGB4
+                  || videoProcessing->Out.FourCC == MFX_FOURCC_RGBP
                   || videoProcessing->Out.FourCC == MFX_FOURCC_NV12
                   || videoProcessing->Out.FourCC == MFX_FOURCC_P010
                   || videoProcessing->Out.FourCC == MFX_FOURCC_YUY2
@@ -1149,6 +1150,7 @@ mfxStatus VideoDECODEH264::DecodeFrameCheck(mfxBitstream *bs,
 
 mfxStatus VideoDECODEH264::DecodeFrameCheck(mfxBitstream *bs, mfxFrameSurface1 *surface_work, mfxFrameSurface1 **surface_out)
 {
+    MFX_AUTO_LTRACE(MFX_TRACE_LEVEL_INTERNAL, __FUNCTION__);
     MFX_CHECK(m_isInit, MFX_ERR_NOT_INITIALIZED);
 
     bool allow_null_work_surface = SupportsVPLFeatureSet(*m_core);

@@ -196,6 +196,7 @@ mfxStatus VideoDECODEH265::Init(mfxVideoParam *par)
 
         bool is_fourcc_supported =
                  (  videoProcessing->Out.FourCC == MFX_FOURCC_RGB4
+                 || videoProcessing->Out.FourCC == MFX_FOURCC_RGBP
                  || videoProcessing->Out.FourCC == MFX_FOURCC_NV12
                  || videoProcessing->Out.FourCC == MFX_FOURCC_P010
                  || videoProcessing->Out.FourCC == MFX_FOURCC_YUY2
@@ -894,7 +895,7 @@ mfxStatus VideoDECODEH265::DecodeFrameCheck(mfxBitstream *bs,
                                               MFX_ENTRY_POINT *pEntryPoint)
 {
     UMC::AutomaticUMCMutex guard(m_mGuard);
-
+    MFX_AUTO_LTRACE(MFX_TRACE_LEVEL_INTERNAL, __FUNCTION__);
     mfxStatus mfxSts = DecodeFrameCheck(bs, surface_work, surface_out);
 
     if (MFX_ERR_NONE == mfxSts || (mfxStatus)MFX_ERR_MORE_DATA_SUBMIT_TASK == mfxSts) // It can be useful to run threads right after first frame receive
