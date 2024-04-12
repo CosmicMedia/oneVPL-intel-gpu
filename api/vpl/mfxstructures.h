@@ -385,8 +385,8 @@ typedef enum {
     MFX_HANDLE_HDDLUNITE_WORKLOADCONTEXT        = 9,  /*!< Pointer to HddlUnite::WorkloadContext interface. */
     MFX_HANDLE_PXP_CONTEXT                      = 10, /*!< Pointer to PXP context for protected content support. */
 
-#ifdef ONEVPL_EXPERIMENTAL
     MFX_HANDLE_CONFIG_INTERFACE                 = 1000,  /*!< Pointer to interface of type mfxConfigInterface. */
+#ifdef ONEVPL_EXPERIMENTAL
     MFX_HANDLE_MEMORY_INTERFACE                 = 1001,  /*!< Pointer to interface of type mfxMemoryInterface. */
 #endif
 } mfxHandleType;
@@ -898,6 +898,8 @@ typedef struct {
                     @note In the HEVC design, a further adjustment to QPs can occur based on bit depth.
                     Adjusted QPI value = QPI - (6 * (BitDepthLuma - 8)) for BitDepthLuma in the range [8,14].
                     For HEVC_MAIN10, we minus (6*(10-8)=12) on our side and continue.
+                    @note In av1 design, valid range is 0 to 255 inclusive, and if QPI=QPP=QPB=0, the encoder is in lossless mode.
+                    @note In vp9 design, valid range is 1 to 255 inclusive, and zero QP that the default value is assigned by the library.
                     @note Default QPI value is implementation dependent and subject to change without additional notice in this document. */
                 mfxU16  QPI;
                 mfxU16  Accuracy; /*!< Specifies accuracy range in the unit of tenth of percent. */
@@ -911,6 +913,8 @@ typedef struct {
                     @note In the HEVC design, a further adjustment to QPs can occur based on bit depth.
                     Adjusted QPP value = QPP - (6 * (BitDepthLuma - 8)) for BitDepthLuma in the range [8,14].
                     For HEVC_MAIN10, we minus (6*(10-8)=12) on our side and continue.
+                    @note In av1 design, valid range is 0 to 255 inclusive, and if QPI=QPP=QPB=0, the encoder is in lossless mode.
+                    @note In vp9 design, valid range is 1 to 255 inclusive, and zero QP that the default value is assigned by the library.
                     @note Default QPP value is implementation dependent and subject to change without additional notice in this document. */
                 mfxU16  QPP;
                 mfxU16  ICQQuality; /*!< Used by the Intelligent Constant Quality (ICQ) bitrate control algorithm. Values are in the 1 to 51 range, where 1 corresponds the best quality. */
@@ -923,6 +927,7 @@ typedef struct {
                     @note In the HEVC design, a further adjustment to QPs can occur based on bit depth.
                     Adjusted QPB value = QPB - (6 * (BitDepthLuma - 8)) for BitDepthLuma in the range [8,14].
                     For HEVC_MAIN10, we minus (6*(10-8)=12) on our side and continue.
+                    @note In av1 design, valid range is 0 to 255 inclusive, and if QPI=QPP=QPB=0, the encoder is in lossless mode.
                     @note Default QPB value is implementation dependent and subject to change without additional notice in this document. */
                 mfxU16  QPB;
                 mfxU16  Convergence; /*!< Convergence period in the unit of 100 frames. */
@@ -1062,7 +1067,8 @@ enum {
     MFX_CODEC_VC1         =MFX_MAKEFOURCC('V','C','1',' '), /*!< VC-1 codec. */
     MFX_CODEC_CAPTURE     =MFX_MAKEFOURCC('C','A','P','T'), /*!<  */
     MFX_CODEC_VP9         =MFX_MAKEFOURCC('V','P','9',' '), /*!< VP9 codec. */
-    MFX_CODEC_AV1         =MFX_MAKEFOURCC('A','V','1',' ')  /*!< AV1 codec. */
+    MFX_CODEC_AV1         =MFX_MAKEFOURCC('A','V','1',' '), /*!< AV1 codec. */
+    MFX_CODEC_VVC         =MFX_MAKEFOURCC('V','V','C',' ')  /*!< VVC codec. */
 };
 
 /*!
@@ -1247,6 +1253,35 @@ enum {
     MFX_LEVEL_AV1_71                        = 71,
     MFX_LEVEL_AV1_72                        = 72,
     MFX_LEVEL_AV1_73                        = 73,
+    /*! @} */
+
+    /*! @{ */
+    /* VVC Profiles */
+    MFX_PROFILE_VVC_MAIN10                  = 1,
+    /*! @} */
+
+    /*! @{ */
+    /* VVC Levels */
+    MFX_LEVEL_VVC_1                         = 16,
+    MFX_LEVEL_VVC_2                         = 32,
+    MFX_LEVEL_VVC_21                        = 35,
+    MFX_LEVEL_VVC_3                         = 48,
+    MFX_LEVEL_VVC_31                        = 51,
+    MFX_LEVEL_VVC_4                         = 64,
+    MFX_LEVEL_VVC_41                        = 67,
+    MFX_LEVEL_VVC_5                         = 80,
+    MFX_LEVEL_VVC_51                        = 83,
+    MFX_LEVEL_VVC_52                        = 86,
+    MFX_LEVEL_VVC_6                         = 96,
+    MFX_LEVEL_VVC_61                        = 99,
+    MFX_LEVEL_VVC_62                        = 102,
+    MFX_LEVEL_VVC_155                       = 255,
+    /*! @} */
+
+    /*! @{ */
+    /* VVC tiers */
+    MFX_TIER_VVC_MAIN                       = 0,
+    MFX_TIER_VVC_HIGH                       = 0x100,
     /*! @} */
 };
 
@@ -1609,23 +1644,23 @@ typedef struct {
        @note Not all codecs and implementations support this value. Use the Query API function to check if this feature is supported.
     */
     mfxU16      SkipFrame;
-    mfxU8       MinQPI; /*!< Minimum allowed QP value for I-frame types. Valid range is 1 to 51 inclusive. Zero means default value, that is, no limitations on QP.
+    mfxU8       MinQPI; /*!< Minimum allowed QP value for I-frame types. Valid range varies with the codec. Zero means default value, that is, no limitations on QP.
                              @note Not all codecs and implementations support this value. Use the Query API function to check if this feature is supported. */
-    mfxU8       MaxQPI; /*!< Maximum allowed QP value for I-frame types. Valid range is 1 to 51 inclusive. Zero means default value, that is, no limitations on QP.
+    mfxU8       MaxQPI; /*!< Maximum allowed QP value for I-frame types. Valid range varies with the codec. Zero means default value, that is, no limitations on QP.
                              @note In the HEVC design, a further adjustment to QPs can occur based on bit depth.
                              Adjusted MaxQPI value = 51 + (6 * (BitDepthLuma - 8)) for BitDepthLuma in the range [8,14].
                              For HEVC_MAIN10, we add (6*(10-8)=12) on our side for MaxQPI will reach 63.
                              @note Not all codecs and implementations support this value. Use the Query API function to check if this feature is supported. */
-    mfxU8       MinQPP; /*!< Minimum allowed QP value for P-frame types. Valid range is 1 to 51 inclusive. Zero means default value, that is, no limitations on QP.
+    mfxU8       MinQPP; /*!< Minimum allowed QP value for P-frame types. Valid range varies with the codec. Zero means default value, that is, no limitations on QP.
                              @note Not all codecs and implementations support this value. Use the Query API function to check if this feature is supported. */
-    mfxU8       MaxQPP; /*!< Maximum allowed QP value for P-frame types. Valid range is 1 to 51 inclusive. Zero means default value, that is, no limitations on QP.
+    mfxU8       MaxQPP; /*!< Maximum allowed QP value for P-frame types. Valid range varies with the codec. Zero means default value, that is, no limitations on QP.
                              @note In the HEVC design, a further adjustment to QPs can occur based on bit depth.
                              Adjusted MaxQPP value = 51 + (6 * (BitDepthLuma - 8)) for BitDepthLuma in the range [8,14].
                              For HEVC_MAIN10, we add (6*(10-8)=12) on our side for MaxQPP will reach 63.
                              @note Not all codecs and implementations support this value. Use the Query API function to check if this feature is supported. */
-    mfxU8       MinQPB; /*!< Minimum allowed QP value for B-frame types. Valid range is 1 to 51 inclusive. Zero means default value, that is, no limitations on QP.
+    mfxU8       MinQPB; /*!< Minimum allowed QP value for B-frame types. Valid range varies with the codec. Zero means default value, that is, no limitations on QP.
                              @note Not all codecs and implementations support this value. Use the Query API function to check if this feature is supported. */
-    mfxU8       MaxQPB; /*!< Maximum allowed QP value for B-frame types. Valid range is 1 to 51 inclusive. Zero means default value, that is, no limitations on QP.
+    mfxU8       MaxQPB; /*!< Maximum allowed QP value for B-frame types. Valid range varies with the codec. Zero means default value, that is, no limitations on QP.
                              @note In the HEVC design, a further adjustment to QPs can occur based on bit depth.
                              Adjusted MaxQPB value = 51 + (6 * (BitDepthLuma - 8)) for BitDepthLuma in the range [8,14].
                              For HEVC_MAIN10, we add (6*(10-8)=12) on our side for MaxQPB will reach 63.
@@ -2396,6 +2431,16 @@ enum {
        See the mfxExtVPPAISuperResolution structure for details.
     */
     MFX_EXTBUFF_VPP_AI_SUPER_RESOLUTION = MFX_MAKEFOURCC('V','A','S','R'),
+#endif
+#ifdef ONEVPL_EXPERIMENTAL
+   /*!
+      See the mfxExtQualityInfoMode structure for details.
+   */
+   MFX_EXTBUFF_ENCODED_QUALITY_INFO_MODE = MFX_MAKEFOURCC('E', 'N', 'Q', 'M'),
+    /*!
+      See the mfxExtQualityInfoOutput structure for details.
+   */
+   MFX_EXTBUFF_ENCODED_QUALITY_INFO_OUTPUT = MFX_MAKEFOURCC('E', 'N', 'Q', 'O'),
 #endif
 };
 
@@ -5102,11 +5147,22 @@ MFX_PACK_END()
 #ifdef ONEVPL_EXPERIMENTAL
 /* The mfxAISuperResolutionMode enumerator specifies the mode of AI based super resolution. */
 typedef enum {
-    MFX_AI_SUPER_RESOLUTION_MODE_DEFAULT = 0,         /*!< Default super resolution mode. The library selects the most appropriate super resolution mode.*/
+    MFX_AI_SUPER_RESOLUTION_MODE_DISABLED = 0,        /*!< Super Resolution is disabled.*/
+    MFX_AI_SUPER_RESOLUTION_MODE_DEFAULT = 1,         /*!< Default super resolution mode. The library selects the most appropriate super resolution mode.*/
 } mfxAISuperResolutionMode;
 
 MFX_PACK_BEGIN_STRUCT_W_PTR()
-/*! A hint structure that configures AI based super resolution VPP filter. */
+/*!
+    A hint structure that configures AI based super resolution VPP filter.
+    Super resolution is an AI-powered upscaling feature which converts a low-resolution to high-resolution.
+    On some platforms this filter is not supported. To query its support, the application should use the same approach that it uses to configure VPP filters:
+    adding the filter ID to the mfxExtVPPDoUse structure or by attaching the mfxExtVPPAISuperResolution structure directly to the mfxVideoParam structure and
+    calling the Query API function. If the filter is supported, the function returns a MFX_ERR_NONE status; otherwise, the function returns MFX_ERR_UNSUPPORTED.
+    If both mfxExtVPPAISuperResolution and mfxExtVPPScaling are attached during initialization, the function will return MFX_ERR_INCOMPATIBLE_VIDEO_PARAM; if both
+    of them are attached during runtime, the mfxExtVPPAISuperResolution will override the upscaling mode and use super resolution.
+    If the application needs to switch on and off, the application can set the MFX_AI_SUPER_RESOLUTION_MODE_DISABLED to switch off, MFX_AI_SUPER_RESOLUTION_MODE_DEFAULT
+    to switch on.
+*/
 typedef struct {
     mfxExtBuffer                Header;               /*!< Extension buffer header. Header.BufferId must be equal to MFX_EXTBUFF_VPP_AI_SUPER_RESOLUTION.*/
     mfxAISuperResolutionMode    SRMode;               /*!< Indicates Super Resolution Mode. mfxAISuperResolutionMode enumerator.*/
@@ -5114,6 +5170,43 @@ typedef struct {
     mfxU32                      reserved1[16];         /*!< Reserved for future use. */
     mfxHDL                      reserved2[4];          /*!< Reserved for future use. */
 } mfxExtVPPAISuperResolution;
+MFX_PACK_END()
+#endif
+
+#ifdef ONEVPL_EXPERIMENTAL
+/* The mfxQualityInfoMode enumerator specifies the mode of Quality information. */
+typedef enum {
+    MFX_QUALITY_INFO_DISABLE        = 0,
+    MFX_QUALITY_INFO_LEVEL_FRAME    = 0x1, /*!< Frame level quality report. */
+} mfxQualityInfoMode;
+
+MFX_PACK_BEGIN_USUAL_STRUCT()
+/*!
+   Used by the encoder to set quality information report mode for the encoded picture. 
+   
+   @note Not all implementations of the encoder support this extended buffer. The application must use query mode 1 to determine if
+         the functionality is supported. To do this, the application must attach this extended buffer to the mfxVideoParam structure and
+         call the MFXVideoENCODE_Query function. If the function returns MFX_ERR_NONE then the functionality is supported.
+*/
+typedef struct {
+    mfxExtBuffer        Header;         /*!< Extension buffer header. Header.BufferId must be equal to MFX_EXTBUFF_ENCODED_QUALITY_INFO_MODE. */
+    mfxQualityInfoMode  QualityInfoMode;/*!< See mfxQualityInfoMode enumeration for supported modes. */
+    mfxU32              reserved[5];    /*!< Reserved for future use. */
+} mfxExtQualityInfoMode;
+MFX_PACK_END()
+
+MFX_PACK_BEGIN_STRUCT_W_PTR()
+/*!
+   Used by the encoder to report quality information about the encoded picture. The application can attach
+   this buffer to the mfxBitstream structure before calling MFXVideoENCODE_EncodeFrameAsync function.
+*/
+typedef struct {
+    mfxExtBuffer        Header;         /*!< Extension buffer header. Header.BufferId must be equal to MFX_EXTBUFF_ENCODED_QUALITY_INFO_OUTPUT. */
+    mfxU32              FrameOrder;     /*!< Frame display order of encoded picture. */
+    mfxU32              MSE[3];         /*!< Frame level mean squared errors (MSE) for Y/U/V channel. */
+    mfxU32              reserved1[50];  /*!< Reserved for future use. */
+    mfxHDL              reserved2[4];   /*!< Reserved for future use. */
+} mfxExtQualityInfoOutput;
 MFX_PACK_END()
 #endif
 
