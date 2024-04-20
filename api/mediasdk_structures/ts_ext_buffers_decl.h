@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021 Intel Corporation
+// Copyright (c) 2018-2024 Intel Corporation
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -161,4 +161,8 @@ EXTBUF(mfxExtEncodeStatsOutput, MFX_EXTBUFF_ENCODESTATS)
 #ifdef MFX_ENABLE_ENCODE_QUALITYINFO
 EXTBUF(mfxExtQualityInfoMode, MFX_EXTBUFF_ENCODED_QUALITY_INFO_MODE)
 EXTBUF(mfxExtQualityInfoOutput, MFX_EXTBUFF_ENCODED_QUALITY_INFO_OUTPUT)
+#endif
+
+#ifdef MFX_ENABLE_ENCODE_AV1SCC
+EXTBUF(mfxExtAV1ScreenContentTools, MFX_EXTBUFF_AV1_SCREEN_CONTENT_TOOLS)
 #endif

@@ -1,4 +1,4 @@
-// Copyright (c) 2008-2020 Intel Corporation
+// Copyright (c) 2008-2024 Intel Corporation
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -1023,6 +1023,12 @@ STRUCT(mfxExtQualityInfoMode,
 )
 
 STRUCT(mfxExtQualityInfoOutput,
+    FIELD_S(mfxExtBuffer, Header)
+)
+#endif
+
+#ifdef MFX_ENABLE_ENCODE_AV1SCC
+STRUCT(mfxExtAV1ScreenContentTools,
     FIELD_S(mfxExtBuffer, Header)
 )
 #endif

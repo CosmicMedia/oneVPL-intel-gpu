@@ -418,7 +418,7 @@ typedef struct {
         struct mfxFrameSurfaceInterface*  FrameInterface;       /*!< Specifies interface to work with surface. */
         mfxU32  reserved[2];
     };
-    mfxStructVersion Version; /* Specifies version of mfxFrameSurface1 structure. */
+    mfxStructVersion Version; /*!< Specifies version of mfxFrameSurface1 structure. */
     mfxU16          reserved1[3];
     mfxFrameInfo    Info; /*!< Specifies surface properties. */
     mfxFrameData    Data; /*!< Describes the actual frame buffer. */
@@ -562,7 +562,7 @@ MFX_PACK_END()
 #endif
 
 MFX_PACK_BEGIN_STRUCT_W_L_TYPE()
-/* Specifies frame surface interface. */
+/*! Specifies frame surface interface. */
 typedef struct mfxFrameSurfaceInterface {
     mfxHDL              Context; /*!< The context of the memory interface. User should not touch (change, set, null) this pointer. */
     mfxStructVersion    Version; /*!< The version of the structure. */
@@ -2405,11 +2405,6 @@ enum {
     
 #ifdef ONEVPL_EXPERIMENTAL
     /*!
-       See the mfxExtSyncSubmission structure for more details.
-    */
-    MFX_EXTBUFF_SYNCSUBMISSION = MFX_MAKEFOURCC('S','Y','N','C'),
-
-    /*!
        See the mfxExtVPPPercEncPrefilter structure for details.
     */
     MFX_EXTBUFF_VPP_PERC_ENC_PREFILTER        = MFX_MAKEFOURCC('V','P','E','F'),
@@ -2441,6 +2436,22 @@ enum {
       See the mfxExtQualityInfoOutput structure for details.
    */
    MFX_EXTBUFF_ENCODED_QUALITY_INFO_OUTPUT = MFX_MAKEFOURCC('E', 'N', 'Q', 'O'),
+#endif
+#ifdef ONEVPL_EXPERIMENTAL
+   /*!
+      See the mfxExtAV1ScreenContentTools structure for details.
+   */
+   MFX_EXTBUFF_AV1_SCREEN_CONTENT_TOOLS = MFX_MAKEFOURCC('1', 'S', 'C', 'C'),
+#endif
+#ifdef ONEVPL_EXPERIMENTAL
+    /*!
+        See the mfxExtAlphaChannelEncCtrl structure for more details.
+    */
+    MFX_EXTBUFF_ALPHA_CHANNEL_ENC_CTRL = MFX_MAKEFOURCC('A', 'C', 'E', 'C'),
+    /*!
+        See the mfxExtAlphaChannelSurface structure for more details.
+    */
+    MFX_EXTBUFF_ALPHA_CHANNEL_SURFACE = MFX_MAKEFOURCC('A', 'C', 'S', 'F'),
 #endif
 };
 
@@ -2584,7 +2595,7 @@ MFX_PACK_BEGIN_USUAL_STRUCT()
     A hint structure that configures 3DLUT filter.
 */
 typedef struct {
-    mfxExtBuffer             Header;           /*!< Extension buffer header. Header.BufferId must be equal to MFX_EXTBUFF_VPP_3DLUT..*/
+    mfxExtBuffer             Header;           /*!< Extension buffer header. Header.BufferId must be equal to MFX_EXTBUFF_VPP_3DLUT.*/
     mfx3DLutChannelMapping   ChannelMapping;   /*!< Indicates 3DLUT channel mapping. mfx3DLutChannelMapping enumerator.*/
     mfxResourceType          BufferType;       /*!< Indicates 3DLUT buffer type. mfxResourceType enumerator, can be system memory, VA surface, DX11 texture/buffer etc.*/
     union
@@ -2835,7 +2846,9 @@ enum {
                                                considered to be exported to DRM Prime FD, DRM FLink or DRM FrameBuffer Handle. Specifics of export
                                                types and export procedure depends on external frame allocator implementation */
     MFX_MEMTYPE_SHARED_RESOURCE = MFX_MEMTYPE_EXPORT_FRAME, /*!< For DX11 allocation use shared resource bind flag. */
-    MFX_MEMTYPE_VIDEO_MEMORY_ENCODER_TARGET = 0x1000 /*!< Frames are in video memory and belong to video encoder render targets. */
+    MFX_MEMTYPE_VIDEO_MEMORY_ENCODER_TARGET = 0x1000, /*!< Frames are in video memory and belong to video encoder render targets. */
+
+    MFX_MEMTYPE_VIDEO_MEMORY_UNORDERED_ACCESS = 0x8000 /*!< Frames are in video memory and used as an unordered access resource. */
 };
 
 MFX_PACK_BEGIN_USUAL_STRUCT()
@@ -3515,7 +3528,7 @@ enum {
     MFX_TRANSFERMATRIX_BT601   = 2  /*!< Transfer matrix from ITU-R BT.601 standard. */
 };
 
-/* The NominalRange enumerator itemizes pixel's value nominal range. */
+/*! The NominalRange enumerator itemizes pixel's value nominal range. */
 enum {
     MFX_NOMINALRANGE_UNKNOWN   = 0, /*!< Range is not defined. */
     MFX_NOMINALRANGE_0_255     = 1, /*!< Range is from  0 to 255. */
@@ -5080,17 +5093,6 @@ typedef struct {
 MFX_PACK_END()
 
 #ifdef ONEVPL_EXPERIMENTAL
-MFX_PACK_BEGIN_STRUCT_W_PTR()
-/*! The structure is used to get a synchronization object which signalizes about submission of a task to GPU.  */
-typedef struct {
-    mfxExtBuffer     Header;     /*! Extension buffer header. Header.BufferId must be equal to MFX_EXTBUFF_SYNCSUBMISSION. */
-    mfxSyncPoint     *SubmissionSyncPoint; /*!< SyncPoint object to get a moment of a submission task to GPU.  */
-    mfxU32 reserved1[8]; /*!< Reserved for future use. */
-} mfxExtSyncSubmission;
-MFX_PACK_END()
-#endif
-
-#ifdef ONEVPL_EXPERIMENTAL
 MFX_PACK_BEGIN_USUAL_STRUCT()
 /*! The structure is used to configure perceptual encoding prefilter in VPP. */
 typedef struct {
@@ -5124,28 +5126,7 @@ MFX_PACK_END()
 #endif
 
 #ifdef ONEVPL_EXPERIMENTAL
-/* The mfxAutoSelectImplType enumerator specifies the method for automatically selecting an implementation. */
-typedef enum {
-    MFX_AUTO_SELECT_IMPL_TYPE_UNKNOWN = 0,         /*!< Unspecified automatic implementation selection. */
-    MFX_AUTO_SELECT_IMPL_TYPE_DEVICE_HANDLE = 1,   /*!< Select implementation corresponding to device handle. */
-} mfxAutoSelectImplType;
-
-MFX_PACK_BEGIN_STRUCT_W_PTR()
-/*! Specifies that an implementation should be selected which matches the device handle provided by the application. */
-typedef struct {
-    mfxAutoSelectImplType AutoSelectImplType;      /*!< Must be set to MFX_AUTO_SELECT_IMPL_TYPE_DEVICE_HANDLE. */
-
-    mfxAccelerationMode   AccelMode;               /*!< Hardware acceleration mode of provided device handle. */
-    mfxHandleType         DeviceHandleType;        /*!< Type of provided device handle. */
-    mfxHDL                DeviceHandle;            /*!< System handle to hardware device. */
-
-    mfxU16                reserved[8];             /*!< Reserved for future use. */
-} mfxAutoSelectImplDeviceHandle;
-MFX_PACK_END()
-#endif
-
-#ifdef ONEVPL_EXPERIMENTAL
-/* The mfxAISuperResolutionMode enumerator specifies the mode of AI based super resolution. */
+/*! The mfxAISuperResolutionMode enumerator specifies the mode of AI based super resolution. */
 typedef enum {
     MFX_AI_SUPER_RESOLUTION_MODE_DISABLED = 0,        /*!< Super Resolution is disabled.*/
     MFX_AI_SUPER_RESOLUTION_MODE_DEFAULT = 1,         /*!< Default super resolution mode. The library selects the most appropriate super resolution mode.*/
@@ -5174,9 +5155,9 @@ MFX_PACK_END()
 #endif
 
 #ifdef ONEVPL_EXPERIMENTAL
-/* The mfxQualityInfoMode enumerator specifies the mode of Quality information. */
+/*! The mfxQualityInfoMode enumerator specifies the mode of Quality information. */
 typedef enum {
-    MFX_QUALITY_INFO_DISABLE        = 0,
+    MFX_QUALITY_INFO_DISABLE        = 0,   /*!< Quality reporting disabled. */
     MFX_QUALITY_INFO_LEVEL_FRAME    = 0x1, /*!< Frame level quality report. */
 } mfxQualityInfoMode;
 
@@ -5207,6 +5188,90 @@ typedef struct {
     mfxU32              reserved1[50];  /*!< Reserved for future use. */
     mfxHDL              reserved2[4];   /*!< Reserved for future use. */
 } mfxExtQualityInfoOutput;
+MFX_PACK_END()
+#endif
+
+#ifdef ONEVPL_EXPERIMENTAL
+MFX_PACK_BEGIN_USUAL_STRUCT()
+/*!
+   Used by the encoder to set the screen content tools.
+
+   @note Not all implementations of the encoder support this extended buffer. The application must use query mode 1 to determine if
+         the functionality is supported. To do this, the application must attach this extended buffer to the mfxVideoParam structure and
+         call the MFXVideoENCODE_Query function. If the function returns MFX_ERR_NONE then the functionality is supported.
+*/
+typedef struct {
+    mfxExtBuffer        Header;         /*!< Extension buffer header. Header.BufferId must be equal to MFX_EXTBUFF_AV1_SCREEN_CONTENT_TOOLS. */
+    /*!
+       Set this flag to MFX_CODINGOPTION_ON to enable palette prediction for encoder. Set this flag to MFX_CODINGOPTION_OFF to disable it.
+       If this flag is set to any other value, the default value will be used which can be obtained from the MFXVideoENCODE_GetVideoParam function after encoding initialization.
+       See the CodingOptionValue enumerator for values of this option. This parameter is valid only during initialization.
+       @note Not all codecs and implementations support this value. Use the Query API function to check if this feature is supported.
+    */
+    mfxU16              Palette;
+    /*!
+       Set this flag to MFX_CODINGOPTION_ON to enable intra block copy prediction for encoder. Set this flag to MFX_CODINGOPTION_OFF to disable it. 
+       If this flag is set to any other value, the default value will be used which can be obtained from the MFXVideoENCODE_GetVideoParam function after encoding initialization.
+       See the CodingOptionValue enumerator for values of this option. This parameter is valid only during initialization.
+       @note Not all codecs and implementations support this value. Use the Query API function to check if this feature is supported.
+    */    
+    mfxU16              IntraBlockCopy;
+    mfxU16              reserved[10];   /*!< Reserved for future use. */
+} mfxExtAV1ScreenContentTools;
+MFX_PACK_END()
+#endif
+
+
+#ifdef ONEVPL_EXPERIMENTAL
+/*! The AlphaChannelMode enumerator specifies alpha is straight or pre-multiplied. */
+enum {
+    /*!
+        RGB and alpha are independent, then the alpha value specifies how solid it is.
+        We set it to the default value, i.e., the alpha source data is already pre-multiplied, so that the decoded samples of the associated primary picture
+        should not be multiplied by the interpretation sample values of the auxiliary coded picture in the display process after output from the decoding process.
+    */
+    MFX_ALPHA_MODE_PREMULTIPLIED    = 1,
+
+    /*!
+        RGB and alpha are linked, then the alpha value specifies how much it obscures whatever is behind it.
+        Therefore, the decoded samples of the associated primary picture should be multiplied by the interpretation sample values
+        of the auxiliary coded picture in the display process after output from the decoding process.
+    */
+    MFX_ALPHA_MODE_STRAIGHT         = 2
+};
+
+MFX_PACK_BEGIN_USUAL_STRUCT()
+/*! Configure the alpha channel encoding. */
+typedef struct {
+    mfxExtBuffer        Header;     /*!< Extension buffer header. BufferId must be equal to MFX_EXTBUFF_ALPHA_CHANNEL_ENC_CTRL. */
+    /*!
+       Set this flag to MFX_CODINGOPTION_ON to enable alpha channel encoding. See the CodingOptionValue enumerator for values of this option.
+       This parameter is valid only during initialization.
+       @note Not all codecs and implementations support this value. Use the Query API function to check if this feature is supported.
+    */
+    mfxU16              EnableAlphaChannelEncoding;
+    /*!
+        Specifies alpha is straight or pre-multiplied. See the AlphaChannelMode enumerator for details.
+        Encoder just record this in the SEI for post-decoding rendering.
+    */
+    mfxU16              AlphaChannelMode;
+    /*!
+       Indicates the percentage of the auxiliary alpha layer in the total bitrate. Valid range for this parameter is [1, 99].
+       We set 25 as the default value, i.e. Alpha(25) : Total(100), then 25% of the bits will be spent on alpha layer encoding whereas the other 75% will be spent on base(YUV) layer.
+       Affects the following variables: InitialDelayInKB, BufferSizeInKB, TargetKbps, MaxKbps.
+    */
+    mfxU16              AlphaChannelBitrateRatio;
+    mfxU16              reserved[9];
+} mfxExtAlphaChannelEncCtrl;
+MFX_PACK_END()
+
+MFX_PACK_BEGIN_STRUCT_W_PTR()
+/*! Defines the uncompressed frames surface information and data buffers for alpha channel encoding. */
+typedef struct {
+    mfxExtBuffer        Header;         /*!< Extension buffer header. BufferId must be equal to MFX_EXTBUFF_ALPHA_CHANNEL_SURFACE. */
+    mfxFrameSurface1*   AlphaSurface;   /*!< Alpha channel surface. */
+    mfxU16              reserved[8];
+} mfxExtAlphaChannelSurface;
 MFX_PACK_END()
 #endif
 
