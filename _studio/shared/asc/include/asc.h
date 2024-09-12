@@ -170,7 +170,7 @@ protected:
         pmfxU8 pDst, mfxU32 dstWidth, mfxU32 dstHeight, mfxU32 dstPitch,
         mfxI16 &avgLuma);
     mfxStatus RsCsCalc();
-    mfxI32 ShotDetect(ASCimageData& Data, ASCimageData& DataRef, ASCImDetails& imageInfo, ASCTSCstat *current, ASCTSCstat *reference, mfxU8 controlLevel);
+    virtual mfxI32 ShotDetect(ASCimageData& Data, ASCimageData& DataRef, ASCImDetails& imageInfo, ASCTSCstat *current, ASCTSCstat *reference, mfxU8 controlLevel);
     void MotionAnalysis(ASCVidSample *videoIn, ASCVidSample *videoRef, mfxU32 *TSC, mfxU16 *AFD, mfxU32 *MVdiffVal, mfxU32 *AbsMVSize, mfxU32 *AbsMVHSize, mfxU32 *AbsMVVSize, ASCLayers lyrIdx);
 
     typedef void(ASC::*t_resizeImg)(mfxU8 *frame, mfxI32 srcWidth, mfxI32 srcHeight, mfxI32 inputPitch, ns_asc::ASCLayers dstIdx, mfxU32 parity);
@@ -188,6 +188,7 @@ protected:
     void InitStruct();
     mfxStatus VidRead_Init();
     void VidSample_Init();
+    virtual mfxStatus VidSample_Alloc();
     void SubSampleASC_ImagePro(mfxU8 *frame, mfxI32 srcWidth, mfxI32 srcHeight, mfxI32 inputPitch, ASCLayers dstIdx, mfxU32 parity);
     void SubSampleASC_ImageInt(mfxU8 *frame, mfxI32 srcWidth, mfxI32 srcHeight, mfxI32 inputPitch, ASCLayers dstIdx, mfxU32 parity);
     bool CompareStats(mfxU8 current, mfxU8 reference);
@@ -244,6 +245,10 @@ public:
     static mfxI32 Get_CpuFeature_SSE41();
 
     virtual mfxStatus calc_RaCa_Surf(mfxHDLPair surface, mfxF64& rscs);
+
+    mfxStatus RunFrame(mfxU8* frame, mfxU32 parity);
+    mfxStatus PutFrameProgressive(mfxU8* frame, mfxI32 Pitch);
+
 protected:
     ASCVidSample** m_videoData;
 };

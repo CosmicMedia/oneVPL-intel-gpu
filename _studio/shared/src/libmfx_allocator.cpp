@@ -1,4 +1,4 @@
-// Copyright (c) 2007-2023 Intel Corporation
+// Copyright (c) 2007-2024 Intel Corporation
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -166,7 +166,6 @@ mfxStatus mfxDefaultAllocator::GetSurfaceSizeInBytes(mfxU32 pitch, mfxU32 height
         break;
     case MFX_FOURCC_P210:
     case MFX_FOURCC_YUY2:
-    case MFX_FOURCC_Y210:
     case MFX_FOURCC_YUV422H:
     case MFX_FOURCC_YUV422V:
     case MFX_FOURCC_UYVY:
@@ -190,9 +189,13 @@ mfxStatus mfxDefaultAllocator::GetSurfaceSizeInBytes(mfxU32 pitch, mfxU32 height
     case MFX_FOURCC_Y410:
     case MFX_FOURCC_Y416:
     case MFX_FOURCC_P8:
+    case MFX_FOURCC_Y210:
     case MFX_FOURCC_Y216:
     case MFX_FOURCC_P8_TEXTURE:
     case MFX_FOURCC_YUV400:
+    case MFX_FOURCC_R16:
+    case MFX_FOURCC_ARGB16:
+    case MFX_FOURCC_ABGR16:
         nBytes = pitch * height;
         break;
     case MFX_FOURCC_ABGR16F:
@@ -218,10 +221,10 @@ mfxStatus mfxDefaultAllocator::GetNumBytesRequired(const mfxFrameInfo & Info, mf
     case MFX_FOURCC_P010:
     case MFX_FOURCC_P016:
     case MFX_FOURCC_P210:
-    case MFX_FOURCC_Y210:
         Pitch = mfx::align2_value(Info.Width * 2, 32);
         break;
     case MFX_FOURCC_Y410:
+    case MFX_FOURCC_Y210:
     case MFX_FOURCC_Y216:
         Pitch = mfx::align2_value(Info.Width * 4, 32);
         break;
@@ -300,6 +303,12 @@ static inline std::pair<mfxU16, mfxU16> pitch_from_width(mfxU32 width, mfxU32 mu
     return { mfxU16(pitch >> 16), mfxU16(pitch & 0xffff) };
 }
 
+static inline size_t pitch_from_frame_data(const mfxFrameData& frame_data)
+{
+
+    return (size_t(frame_data.PitchHigh) << 16) + frame_data.PitchLow;
+}
+
 static inline mfxStatus SetPointers(mfxFrameData& frame_data, const mfxFrameInfo & info, mfxU8* bytes)
 {
     clear_frame_data(frame_data);
@@ -308,29 +317,45 @@ static inline mfxStatus SetPointers(mfxFrameData& frame_data, const mfxFrameInfo
     switch (info.FourCC)
     {
     case MFX_FOURCC_NV12:
+    {
         std::tie(frame_data.PitchHigh, frame_data.PitchLow) = pitch_from_width(info.Width, 1u);
+        size_t pitch = pitch_from_frame_data(frame_data);
+
         frame_data.Y = bytes;
-        frame_data.U = frame_data.Y + frame_data.Pitch*Height2;
+        frame_data.U = frame_data.Y + pitch * Height2;
         frame_data.V = frame_data.U + 1;
+    }
         break;
     case MFX_FOURCC_P010:
     case MFX_FOURCC_P016:
+    {
         std::tie(frame_data.PitchHigh, frame_data.PitchLow) = pitch_from_width(info.Width, 2u);
+        size_t pitch = pitch_from_frame_data(frame_data);
+
         frame_data.Y = bytes;
-        frame_data.U = frame_data.Y + frame_data.Pitch*Height2;
+        frame_data.U = frame_data.Y + pitch * Height2;
         frame_data.V = frame_data.U + 2;
+    }
         break;
     case MFX_FOURCC_P210:
+    {
         std::tie(frame_data.PitchHigh, frame_data.PitchLow) = pitch_from_width(info.Width, 2u);
+        size_t pitch = pitch_from_frame_data(frame_data);
+
         frame_data.Y = bytes;
-        frame_data.U = frame_data.Y + frame_data.Pitch*Height2;
+        frame_data.U = frame_data.Y + pitch * Height2;
         frame_data.V = frame_data.U + 2;
+    }
         break;
     case MFX_FOURCC_YV12:
+    {
         std::tie(frame_data.PitchHigh, frame_data.PitchLow) = pitch_from_width(info.Width, 1u);
+        size_t pitch = pitch_from_frame_data(frame_data);
+
         frame_data.Y = bytes;
-        frame_data.V = frame_data.Y + frame_data.Pitch*Height2;
-        frame_data.U = frame_data.V + (frame_data.Pitch >> 1)*(Height2 >> 1);
+        frame_data.V = frame_data.Y + pitch * Height2;
+        frame_data.U = frame_data.V + (pitch >> 1) * (Height2 >> 1);
+    }
         break;
     case MFX_FOURCC_YUY2:
         std::tie(frame_data.PitchHigh, frame_data.PitchLow) = pitch_from_width(info.Width, 2u);
@@ -360,17 +385,25 @@ static inline mfxStatus SetPointers(mfxFrameData& frame_data, const mfxFrameInfo
         break;
 #ifdef MFX_ENABLE_RGBP
     case MFX_FOURCC_RGBP:
+    {
         std::tie(frame_data.PitchHigh, frame_data.PitchLow) = pitch_from_width(info.Width, 1u);
+        size_t pitch = pitch_from_frame_data(frame_data);
+
         frame_data.R = bytes;
-        frame_data.G = frame_data.R + frame_data.Pitch*Height2;
-        frame_data.B = frame_data.R + 2*frame_data.Pitch*Height2;
+        frame_data.G = frame_data.R + pitch * Height2;
+        frame_data.B = frame_data.R + 2 * pitch * Height2;
+    }
         break;
 #endif
     case MFX_FOURCC_BGRP:
+    {
         std::tie(frame_data.PitchHigh, frame_data.PitchLow) = pitch_from_width(info.Width, 1u);
+        size_t pitch = pitch_from_frame_data(frame_data);
+
         frame_data.B = bytes;
-        frame_data.G = frame_data.B + frame_data.Pitch*Height2;
-        frame_data.R = frame_data.B + 2 * frame_data.Pitch*Height2;
+        frame_data.G = frame_data.B + pitch * Height2;
+        frame_data.R = frame_data.B + 2 * pitch * Height2;
+    }
         break;
     case MFX_FOURCC_RGB4:
         std::tie(frame_data.PitchHigh, frame_data.PitchLow) = pitch_from_width(info.Width, 4u);

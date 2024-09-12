@@ -1,4 +1,4 @@
-// Copyright (c) 2003-2020 Intel Corporation
+// Copyright (c) 2003-2024 Intel Corporation
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -39,6 +39,7 @@
 
 
 #include "mfx_enc_common.h"
+#include "mfx_umc_alloc_wrapper.h"
 
 namespace UMC
 {
@@ -234,9 +235,9 @@ bool MFXTaskSupplier::CheckDecoding(H264DecoderFrame * outputFrame)
     return false;
 }
 
-mfxStatus MFXTaskSupplier::RunThread(mfxU32 threadNumber)
+mfxStatus MFXTaskSupplier::RunThread(mfxU32 threadNumber, H264DecoderFrame* outputFrame)
 {
-    Status sts = m_pSegmentDecoder[threadNumber]->ProcessSegment();
+    Status sts = m_pSegmentDecoder[threadNumber]->ProcessSegment(outputFrame);
     if (sts == UMC_ERR_NOT_ENOUGH_DATA)
         return MFX_TASK_BUSY;
     else if(sts == UMC_ERR_DEVICE_FAILED)
@@ -359,7 +360,15 @@ Status MFXTaskSupplier::DecodeHeaders(NalUnit *nalUnit)
                 m_firstVideoParams.mfx.FrameInfo.Height < (currSPS->frame_height_in_mbs * 16) ||
                 (currSPS->level_idc && m_firstVideoParams.mfx.CodecLevel && m_firstVideoParams.mfx.CodecLevel < currSPS->level_idc))
             {
-                return UMC_NTF_NEW_RESOLUTION;
+                auto frame_source = dynamic_cast<SurfaceSource*>(m_pFrameAllocator);
+                if (frame_source && frame_source->GetSurfaceType() && !m_RecreateSurfaceFlag)
+                {
+                    return UMC::UMC_OK;
+                }
+                else
+                {
+                    return UMC::UMC_NTF_NEW_RESOLUTION;
+                }
             }
         }
 
@@ -1309,6 +1318,7 @@ mfxStatus MFX_Utility::Query(VideoCORE *core, mfxVideoParam *in, mfxVideoParam *
             sts = MFX_ERR_UNSUPPORTED;
         }
 
+        out->mfx.FrameInfo.Shift = in->mfx.FrameInfo.Shift;
         switch (in->mfx.FrameInfo.PicStruct)
         {
         case MFX_PICSTRUCT_UNKNOWN:

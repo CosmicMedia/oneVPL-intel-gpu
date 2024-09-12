@@ -1,4 +1,4 @@
-// Copyright (c) 2004-2021 Intel Corporation
+// Copyright (c) 2004-2024 Intel Corporation
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -1081,7 +1081,7 @@ mfxStatus VideoDECODEH264::RunThread(ThreadTaskInfo264* info, mfxU32 threadNumbe
     {
         for (int32_t i = 0; i < 2 && sts == MFX_TASK_WORKING; i++)
         {
-            sts = m_pH264VideoDecoder->RunThread(threadNumber);
+            sts = m_pH264VideoDecoder->RunThread(threadNumber, pFrame);
         }
     }
 
@@ -1224,6 +1224,8 @@ mfxStatus VideoDECODEH264::DecodeFrameCheck(mfxBitstream *bs, mfxFrameSurface1 *
             ((mfxExtDecodeErrorReport *)extbuf)->ErrorTypes = 0;
             src.SetExtBuffer(extbuf);
         }
+
+        m_pH264VideoDecoder->SetVideoCore(m_core);
 
         for (;;)
         {

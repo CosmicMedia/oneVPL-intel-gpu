@@ -315,9 +315,20 @@ public:
                     case MFX_EXTBUFF_VP9_PARAM:
                         str += dump(name, *((mfxExtVP9Param*)_struct.ExtParam[i])) + "\n";
                         break;
+#if defined(ONEVPL_EXPERIMENTAL)
+                    case MFX_EXTBUFF_ENCODED_QUALITY_INFO_MODE:
+                        str += dump(name, *((mfxExtQualityInfoMode*)_struct.ExtParam[i])) + "\n";
+                        break;
                     case MFX_EXTBUFF_ENCODED_QUALITY_INFO_OUTPUT:
                         str += dump(name, *((mfxExtQualityInfoOutput*)_struct.ExtParam[i])) + "\n";
+                        break;                       
+                    case MFX_EXTBUFF_AV1_SCREEN_CONTENT_TOOLS:
+                        str += dump(name, *((mfxExtAV1ScreenContentTools*)_struct.ExtParam[i])) + "\n";
                         break;
+                    case MFX_EXTBUFF_ALPHA_CHANNEL_ENC_CTRL:
+                        str += dump(name, *((mfxExtAlphaChannelEncCtrl*)_struct.ExtParam[i])) + "\n";
+                        break;
+#endif
                     default:
                         str += dump(name, *(_struct.ExtParam[i])) + "\n";
                         break;
@@ -398,7 +409,12 @@ public:
     DEFINE_DUMP_FUNCTION(mfxVP9TemporalLayer);
     DEFINE_DUMP_FUNCTION(mfxExtVP9Param);
     DEFINE_DUMP_FUNCTION(LongTermRefList);
+#if defined(ONEVPL_EXPERIMENTAL)
+    DEFINE_DUMP_FUNCTION(mfxExtQualityInfoMode);
     DEFINE_DUMP_FUNCTION(mfxExtQualityInfoOutput);
+    DEFINE_DUMP_FUNCTION(mfxExtAV1ScreenContentTools);
+    DEFINE_DUMP_FUNCTION(mfxExtAlphaChannelEncCtrl);
+#endif
 };
 #endif //_MFX_TRACE_DUMP_H_
 

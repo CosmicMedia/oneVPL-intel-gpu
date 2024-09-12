@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 Intel Corporation
+// Copyright (c) 2012-2024 Intel Corporation
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -59,6 +59,13 @@ namespace UMC_AV1_DECODER
             , anchors_loaded(false)
             , skip_first_frames(0)
             , pre_loaded_anchors(nullptr)
+            , color_range(0)
+            , color_description_present_flag(0)
+            , color_primaries(AOM_CICP_CP_UNSPECIFIED)
+            , transfer_characteristics(AOM_CICP_TC_UNSPECIFIED)
+            , matrix_coefficients(AOM_CICP_MC_UNSPECIFIED)
+            , framerate_n(0)
+            , framerate_d(0)
         {}
 
     public:
@@ -72,6 +79,13 @@ namespace UMC_AV1_DECODER
         bool                 anchors_loaded;
         uint32_t             skip_first_frames;
         mfxFrameSurface1**   pre_loaded_anchors;
+        uint32_t             color_range;
+        uint32_t             color_description_present_flag;
+        uint32_t             color_primaries;
+        uint32_t             transfer_characteristics;
+        uint32_t             matrix_coefficients;
+        uint32_t             framerate_n;
+        uint32_t             framerate_d;
     };
 
     class ReportItem // adopted from HEVC/AVC decoders
@@ -160,6 +174,11 @@ namespace UMC_AV1_DECODER
 
         virtual bool QueryFrames() = 0;
 
+        void SetVideoCore(VideoCORE* pCore)
+        {
+            m_pCore = pCore;
+        }
+
         void Flush();
 
     protected:
@@ -230,6 +249,10 @@ namespace UMC_AV1_DECODER
         UMC::FrameMemID                 m_anchor_frame_mem_ids[MAX_ANCHOR_SIZE];
         UMC::FrameMemID                 m_specified_anchor_Idx; // anchor frame index specified by application
         bool                            m_isAnchor; // check if current frame is a anchor frame
+        bool                            m_RecreateSurfaceFlag;
+        uint16_t                        m_drcFrameWidth;
+        uint16_t                        m_drcFrameHeight;
+        VideoCORE*                      m_pCore;
     };
 }
 

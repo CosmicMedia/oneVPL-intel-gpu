@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020 Intel Corporation
+// Copyright (c) 2018-2024 Intel Corporation
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -81,6 +81,11 @@ DEFINE_GUID_VA(sDXVA2_Intel_IVB_ModeJPEG_VLD_NoFGT,          VAProfileJPEGBaseli
 /* MPEG2 */
 DEFINE_GUID_VA(sDXVA2_ModeMPEG2_VLD,                         VAProfileMPEG2Main,     VAEntrypointVLD);
 DEFINE_GUID_VA(DXVA2_Intel_Encode_MPEG2,                     VAProfileMPEG2Main,     VAEntrypointEncSlice);
+
+//vvc
+#if defined(MFX_ENABLE_VVC_VIDEO_DECODE)
+DEFINE_GUID_VA(DXVA_Intel_ModeVVC_VLD,                       VAProfileVVCMain10,   VAEntrypointVLD);
+#endif
 
 /* AV1 */
 #if defined(MFX_ENABLE_AV1_VIDEO_DECODE)
@@ -441,6 +446,12 @@ public:
             MFX_SAFE_CALL(m_pSurfaceCache->ResetCache(*par));
 
         return MFX_ERR_NONE;
+    }
+
+    virtual
+    mfxU16 GetMemType(mfxVideoParam par)
+    {
+        return mfxU16(par.IOPattern == MFX_IOPATTERN_IN_SYSTEM_MEMORY ? MFX_MEMTYPE_FROM_ENCODE | MFX_MEMTYPE_SYSTEM_MEMORY : MFX_MEMTYPE_FROM_ENCODE | MFX_MEMTYPE_DXVA2_DECODER_TARGET);
     }
 
     virtual mfxStatus GetSurface(mfxFrameSurface1** output_surf, mfxSurfaceHeader* import_surface) = 0;

@@ -1,4 +1,4 @@
-// Copyright (c) 2022 Intel Corporation
+// Copyright (c) 2022-2024 Intel Corporation
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -66,6 +66,12 @@ namespace CommonCaps {
     inline bool IsLastLookaheadWindowSupported(eMFXHWType platform)
     {
         return (platform >= MFX_HW_DG2);
+    }
+
+
+    inline bool IsCBRSlidingWinSupported(eMFXHWType platform)
+    {
+        return (platform >= MFX_HW_MTL);
     }
 }
 
@@ -137,6 +143,18 @@ namespace AV1ECaps {
     }
 }
 
+namespace HEVCECaps {
+    inline bool IsNative422Supported(eMFXHWType platform)
+    {
+        return (platform >= MFX_HW_BMG);
+    }
+
+    inline bool IsTUExtended(eMFXHWType platform)
+    {
+        return (platform >= MFX_HW_BMG);
+    }
+}
+
 namespace VppCaps
 {
     inline bool IsMctfSupported(eMFXHWType platform)
@@ -183,6 +201,14 @@ namespace AV1DCaps {
     }
 }
 #endif // MFX_ENABLE_AV1_VIDEO_DECODE
+#ifdef MFX_ENABLE_VVC_VIDEO_DECODE
+namespace VVCDCaps {
+    inline bool IsPlatformSupported(eMFXHWType platform)
+    {
+        return platform >= MFX_HW_LNL;
+    }
+}
+#endif // MFX_ENABLE_VVC_VIDEO_DECODE
 
 #ifdef MFX_ENABLE_H264_VIDEO_DECODE
 namespace H264DCaps {

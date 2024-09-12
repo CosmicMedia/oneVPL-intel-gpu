@@ -33,6 +33,7 @@
 #include <numeric>
 #include <set>
 #include <iterator>
+#include <cmath>
 
 
 namespace AV1EHW
@@ -127,6 +128,8 @@ void General::SetSupported(ParamSupport& blocks)
         MFX_COPY_FIELD(ScenarioInfo);
         MFX_COPY_FIELD(QVBRQuality);
         MFX_COPY_FIELD(TimingInfoPresent);
+        MFX_COPY_FIELD(WinBRCSize);
+        MFX_COPY_FIELD(WinBRCMaxAvgKbps);
         
     });
 
@@ -411,6 +414,8 @@ void General::SetInherited(ParamInheritance& par)
         INHERIT_OPT(LowDelayBRC);
         INHERIT_OPT(ScenarioInfo);
         INHERIT_OPT(TimingInfoPresent);
+        INHERIT_OPT(WinBRCSize);
+        INHERIT_OPT(WinBRCMaxAvgKbps);
     });
 #undef INIT_EB
 #undef INHERIT_OPT
@@ -594,12 +599,6 @@ void General::Query1WithCaps(const FeatureBlocks& /*blocks*/, TPushQ1 Push)
         return CheckTU(out, m_pQWCDefaults->caps);
     });
 
-    Push(BLK_CheckDeltaQ
-        , [this](const mfxVideoParam&, mfxVideoParam& out, StorageW&) -> mfxStatus
-    {
-        return CheckDeltaQ(out);
-    });
-
     Push(BLK_CheckFrameOBU
         , [this](const mfxVideoParam&, mfxVideoParam& out, StorageW& strg) -> mfxStatus
     {
@@ -681,6 +680,12 @@ void General::Query1WithCaps(const FeatureBlocks& /*blocks*/, TPushQ1 Push)
         return CheckRateControl(out, *m_pQWCDefaults);
     });
 
+    Push(BLK_CheckDeltaQ
+        , [this](const mfxVideoParam&, mfxVideoParam& out, StorageW&) -> mfxStatus
+        {
+            return CheckDeltaQ(out);
+        });
+
     Push(BLK_CheckCrops
         , [this](const mfxVideoParam&, mfxVideoParam& out, StorageW&) -> mfxStatus
     {
@@ -728,6 +733,12 @@ void General::Query1WithCaps(const FeatureBlocks& /*blocks*/, TPushQ1 Push)
         ,[this](const mfxVideoParam&, mfxVideoParam& out, StorageW&) -> mfxStatus
     {
         return CheckCdfUpdate(out);
+    });
+
+    Push(BLK_CheckAndFixSlidingWindow
+        ,[this](const mfxVideoParam&, mfxVideoParam& out, StorageW&) -> mfxStatus
+    {
+        return CheckAndFixSlidingWindow(out, *m_pQWCDefaults);
     });
 }
 
@@ -1476,18 +1487,19 @@ void General::PostReorderTask(const FeatureBlocks& blocks, TPushPostRT Push)
         MFX_CHECK(task.Rec.Idx != IDX_INVALID, MFX_ERR_UNDEFINED_BEHAVIOR);
         MFX_CHECK(task.Rec.Mid && task.BS.Mid, MFX_ERR_UNDEFINED_BEHAVIOR);
 
-        auto& fh = Glob::FH::Get(global);
+        auto& glob_fh = Glob::FH::Get(global);
         auto  def = GetRTDefaults(global);
-        ConfigureTask(task, def, recPool, encodedInfo);
-
         auto& framesToShowInfo = Glob::FramesToShowInfo::Get(global);
+
+        ConfigureTask(task, def, recPool, framesToShowInfo, encodedInfo, glob_fh);
         SetTaskFramesToShow(task, framesToShowInfo);
 
         auto& repeatFrameSizeInfo = Glob::RepeatFrameSizeInfo::Get(global);
         SetTaskRepeatedFramesSize(task, repeatFrameSizeInfo);
 
         auto& sh = Glob::SH::Get(global);
-        auto sts = GetCurrentFrameHeader(task, def, sh, fh, Task::FH::Get(s_task));
+        auto& task_fh = Task::FH::Get(s_task);
+        auto sts = GetCurrentFrameHeader(task, def, sh, glob_fh, task_fh);
         MFX_CHECK_STS(sts);
 
         return sts;
@@ -1787,7 +1799,7 @@ static void FillSortedFwdBwd(
     using DisplayOrderToDPBIndex = std::map<mfxI32, mfxU8>;
     using Ref = DisplayOrderToDPBIndex::const_reference;
     auto GetIdx = [](Ref ref) {return ref.second; };
-    auto IsBwd = [=](Ref ref) noexcept {return ref.first > task.DisplayOrderInGOP; };
+    auto IsBwd = [=](Ref ref) {return ref.first > task.DisplayOrderInGOP; };
 
     DisplayOrderToDPBIndex uniqueRefs;
     const mfxExtRefListCtrl* refListCtrl = ExtBuffer::Get(task.ctrl);
@@ -1814,8 +1826,11 @@ static void FillSortedFwdBwd(
     for (mfxU8 refIdx = 0; refIdx < task.DPB.size(); refIdx++)
     {
         auto& refFrm = task.DPB.at(refIdx);
-        if (refFrm && refFrm->TemporalID <= task.TemporalID && preferedFwd.count(refIdx) == 0)
+        if (refFrm && refFrm->PyramidLevel <= task.PyramidLevel
+            && refFrm->TemporalID <= task.TemporalID && preferedFwd.count(refIdx) == 0)
+        {
             uniqueRefs.insert({ refFrm->DisplayOrderInGOP, refIdx });
+        }
     }
     uniqueRefs.erase(task.DisplayOrderInGOP);
 
@@ -2070,11 +2085,13 @@ inline std::tuple<mfxU8, mfxU8> GetMaxRefs(
 
 inline void SetTaskQp(
     TaskCommonPar& task
-    , const mfxVideoParam& par)
+    , const mfxVideoParam& par
+    , FH& fh)
 {
     if (par.mfx.RateControlMethod != MFX_RATECONTROL_CQP)
     {
         task.QpY = 128;
+        fh.quantization_params.base_q_idx = task.QpY;
         return;
     }
 
@@ -2101,8 +2118,60 @@ inline void SetTaskQp(
     }
 
     SetIf(task.QpY, !!task.ctrl.QP, static_cast<mfxU8>(task.ctrl.QP));
+    fh.quantization_params.base_q_idx = task.QpY;
 }
 
+template<class T>
+inline bool CheckQpInRangeOrClip(mfxI32 qp, T& delta)
+{
+
+    mfxI32 clipQp = static_cast<mfxI32>(delta);
+    if (qp + delta > 255)
+    {
+        clipQp = 255 - qp;
+    }
+    else if (qp + delta < 0)
+    {
+        clipQp = 0 - qp;
+    }
+    else
+    {
+        return false;
+    }
+
+    std::ignore = CheckRangeOrClip(clipQp, -63, 63);
+
+    delta = static_cast<T>(clipQp);
+    return true;
+}
+
+inline void ClipDeltaQp(const mfxVideoParam& par, FH& fh)
+{
+    if (par.mfx.RateControlMethod != MFX_RATECONTROL_CQP)
+    {
+        return;
+    }
+    const mfxExtAV1AuxData& auxPar = ExtBuffer::Get(par);
+    mfxU32 changed = 0;
+
+    fh.quantization_params.DeltaQYDc = static_cast<mfxI32>(auxPar.QP.YDcDeltaQ);
+    fh.quantization_params.DeltaQUDc = static_cast<mfxI32>(auxPar.QP.UDcDeltaQ);
+    fh.quantization_params.DeltaQUAc = static_cast<mfxI32>(auxPar.QP.UAcDeltaQ);
+    fh.quantization_params.DeltaQVDc = static_cast<mfxI32>(auxPar.QP.VDcDeltaQ);
+    fh.quantization_params.DeltaQVAc = static_cast<mfxI32>(auxPar.QP.VAcDeltaQ);
+
+    auto qp = fh.quantization_params.base_q_idx;
+
+    changed += CheckQpInRangeOrClip(qp, fh.quantization_params.DeltaQYDc);
+    changed += CheckQpInRangeOrClip(qp, fh.quantization_params.DeltaQUDc);
+    changed += CheckQpInRangeOrClip(qp, fh.quantization_params.DeltaQUAc);
+    changed += CheckQpInRangeOrClip(qp, fh.quantization_params.DeltaQVDc);
+    changed += CheckQpInRangeOrClip(qp, fh.quantization_params.DeltaQVAc);
+
+    std::ignore = changed;
+
+    return;
+}
 inline void SetTaskBRCParams(
     TaskCommonPar& task
     , const mfxVideoParam& par)
@@ -2333,21 +2402,50 @@ inline void SetTaskRefList(
         FillRefListRAB(fwd, maxFwdRefs, bwd, maxBwdRefs, refList);
 }
 
-template <typename DPBIter>
-DPBIter FindOldestSTR(DPBIter dpbBegin, DPBIter dpbEnd, mfxU8 tid)
+DpbIterType FindOldestLowestPrioritySTR(DpbIterType dpbBegin, DpbIterType dpbEnd, const TFramesToShowInfo& framesToShowInfo, mfxU16 numRefP, mfxU32 currentLevel, mfxU8 tid)
 {
-    DPBIter oldestSTR = dpbEnd;
+    std::map<mfxU32, std::vector<DpbIterType>> refsInDPB;
     for (auto it = dpbBegin; it != dpbEnd; ++it)
     {
-        if ((*it) && !(*it)->isLTR && (*it)->TemporalID >= tid)
+        auto& pRef = *it;
+        // Note: B-frames may refresh I-frames and P-frames in certain cases
+        // This is necessary to keep hidden frames in the Decoded Picture Buffer (DPB)
+        // These hidden frames are required for potential future insertion of repeat frames
+        if (!pRef || pRef->isLTR || pRef->TemporalID < tid)
+            continue;
+
+        if (framesToShowInfo.find(pRef->DisplayOrder) != framesToShowInfo.end())
+            continue;
+
+        refsInDPB[pRef->PyramidLevel].push_back(it);
+    }
+
+    if (refsInDPB.size() == 0)
+        return dpbEnd;
+
+    // Attempt to refresh the highest level reference frame first, as it has the lowest priority
+    mfxU32 targetLevel = refsInDPB.rbegin()->first;
+
+    // For P-frames:
+    //   - If the number of level 0 reference frames exceeds the threshold (numRefP for P-frames, 2 for BL0 frames),
+    //   - Fall back to refreshing a level 0 reference frame,
+    //   - This avoids refreshing all B-frames that might be used in future predictions
+    if (currentLevel == 0 && refsInDPB[0].size() >= std::max(numRefP, mfxU16(2)))
+    {
+        targetLevel = 0;
+    }
+
+    std::vector<DpbIterType>& refsInLevel = refsInDPB[targetLevel];
+    DpbIterType slot = refsInLevel.size() > 0 ? refsInLevel[0] : dpbEnd;
+    for (size_t idx = 1; idx < refsInLevel.size(); ++idx)
+    {
+        if ((*refsInLevel[idx])->DisplayOrder < (*slot)->DisplayOrder)
         {
-            if (oldestSTR == dpbEnd)
-                oldestSTR = it;
-            else if ((*oldestSTR)->DisplayOrder > (*it)->DisplayOrder)
-                oldestSTR = it;
+            slot = refsInLevel[idx];
         }
     }
-    return oldestSTR;
+
+    return slot;
 }
 
 inline void SetVCLowDelayFlatDPBRefresh(
@@ -2471,6 +2569,7 @@ inline mfxU8 SetTaskDPBRefreshLowDelayFlat(
 inline void SetTaskDPBRefresh(
     TaskCommonPar& task
     , const mfxVideoParam& par
+    , const TFramesToShowInfo& framesToShowInfo
     , bool useLTR)
 {
     auto& refreshRefFrames = task.RefreshFrameFlags;
@@ -2502,13 +2601,22 @@ inline void SetTaskDPBRefresh(
             // If no LTR was refreshed, then find duplicate reference frame
             // Some frames can be included multiple times into DPB
             for (auto it = dpbBegin + 1; it < dpbEnd && slotToRefresh == dpbEnd; ++it)
+            {
                 if (std::find(dpbBegin, it, *it) != it)
+                {
                     slotToRefresh = it;
+                    break;
+                }
+            }
 
-            // If no duplicates, then find the oldest STR
+            // If no duplicates, then find the lowest priority short term ref slot with oldest display order
             // For temporal scalability frame must not overwrite frames from lower layers
             if (slotToRefresh == dpbEnd)
-                slotToRefresh = FindOldestSTR(dpbBegin, dpbEnd, task.TemporalID);
+            {
+                const mfxExtCodingOption3& CO3 = ExtBuffer::Get(par);
+                mfxU16 numRefP = CO3.NumRefActiveP[0];
+                slotToRefresh = FindOldestLowestPrioritySTR(dpbBegin, dpbEnd, framesToShowInfo, numRefP, task.PyramidLevel, task.TemporalID);
+            }
 
             // If failed, just do not refresh any reference frame.
             // This should not happend since we maintain at least 1 STR in DPB
@@ -2626,12 +2734,15 @@ void General::ConfigureTask(
     TaskCommonPar& task
     , const Defaults::Param& dflts
     , IAllocation& recPool
-    , EncodedInfoAv1& encodedInfo)
+    , const TFramesToShowInfo& framesToShowInfo
+    , EncodedInfoAv1& encodedInfo
+    , FH& fh)
 {
     task.StatusReportId = std::max<mfxU32>(1, m_prevTask.StatusReportId + 1);
 
     const auto& par = dflts.mvp;
-    SetTaskQp(task, par);
+    SetTaskQp(task, par, fh);
+    ClipDeltaQp(par, fh);
     SetTaskBRCParams(task, par);
     SetTaskEncodeOrders(task, m_prevTask);
 
@@ -2639,7 +2750,7 @@ void General::ConfigureTask(
 
     bool useLTR = false;
     SetTaskRefList(task, par, useLTR);
-    SetTaskDPBRefresh(task, par, useLTR);
+    SetTaskDPBRefresh(task, par, framesToShowInfo, useLTR);
     SetTaskInsertHeaders(task, m_prevTask, par, m_insertIVFSeq);
 
     const mfxExtCodingOption3* pCO3 = ExtBuffer::Get(par);
@@ -3218,6 +3329,79 @@ void SetDefaultBRC(
     }
 }
 
+inline void FixWinBRCMaxAvgKbps(mfxVideoParam& par, mfxExtCodingOption3& CO3, const mfxF64 overShootCBRPct)
+{
+    mfxU32 targetKbps = TargetKbps(par.mfx);
+    mfxU32 winBRCMaxAvgKbps = static_cast<mfxU32>(std::round(targetKbps * overShootCBRPct));
+    mfxU16 multiplierMin = (mfxU16)mfx::CeilDiv<mfxU32>(winBRCMaxAvgKbps, 65535u);
+    mfxU16 multiplier = std::max<const mfxU16>(1, par.mfx.BRCParamMultiplier);
+
+    if (multiplierMin > multiplier)
+    {
+        par.mfx.TargetKbps = static_cast<mfxU16> (TargetKbps(par.mfx) / multiplierMin);
+        par.mfx.MaxKbps = static_cast<mfxU16>(MaxKbps(par.mfx) / multiplierMin);
+        par.mfx.BufferSizeInKB = static_cast<mfxU16>(BufferSizeInKB(par.mfx) / multiplierMin);
+        par.mfx.InitialDelayInKB = static_cast<mfxU16>(InitialDelayInKB(par.mfx) / multiplierMin);
+        par.mfx.BRCParamMultiplier = multiplierMin;
+    }
+    CO3.WinBRCMaxAvgKbps = mfxU16(winBRCMaxAvgKbps / std::max<const mfxU32>(1, par.mfx.BRCParamMultiplier));
+}
+
+mfxStatus General::CheckAndFixSlidingWindow(mfxVideoParam& par, const Defaults::Param& defPar)
+{
+    mfxExtCodingOption3* pCO3 = ExtBuffer::Get(par);
+    MFX_CHECK(pCO3, MFX_ERR_NONE);
+    MFX_CHECK(pCO3->WinBRCSize != 0 || pCO3->WinBRCMaxAvgKbps != 0, MFX_ERR_NONE);
+
+    if (par.mfx.RateControlMethod != MFX_RATECONTROL_CBR
+        || defPar.caps.SupportedRateControlMethods.fields.SlidingWindow == false)
+    {
+        pCO3->WinBRCSize = 0;
+        pCO3->WinBRCMaxAvgKbps = 0;
+        MFX_RETURN(MFX_WRN_INCOMPATIBLE_VIDEO_PARAM);
+    }
+
+    mfxU32 changed = 0;
+    mfxU32 frN = 0, frD = 0;
+    std::tie(frN, frD) = defPar.base.GetFrameRate(defPar);
+    mfxF64 frameRate = static_cast<mfxF64>(frN) / frD;
+    mfxU16 winBRCSizeMax = 120;
+    mfxU16 winBRCSizeMin = std::min(static_cast<mfxU16>(0.5 * frameRate), winBRCSizeMax);
+
+    if (pCO3->WinBRCSize)
+    {
+        changed += CheckRangeOrClip(pCO3->WinBRCSize, winBRCSizeMin, winBRCSizeMax);
+    }
+    else
+    {
+        SetDefault(pCO3->WinBRCSize, std::min(static_cast<mfxU16>(frameRate), winBRCSizeMax));
+        changed += 1;
+    }
+
+    if (pCO3->WinBRCMaxAvgKbps)
+    {
+        mfxU32 targetKbps = defPar.base.GetTargetKbps(defPar);
+        mfxU32 winBRCMaxAvgKbps = pCO3->WinBRCMaxAvgKbps * std::max<const mfxU16>(1, par.mfx.BRCParamMultiplier);
+        mfxF64 overShootCBRPct = static_cast<mfxF64>(winBRCMaxAvgKbps) / targetKbps;
+        bool isWinBRCMaxAvgKbpsChanged = CheckRangeOrClip(overShootCBRPct, 1.1, 2.0);
+
+        if (isWinBRCMaxAvgKbpsChanged)
+        {
+            FixWinBRCMaxAvgKbps(par, *pCO3, overShootCBRPct);
+            changed += 1;
+        }
+    }
+    else
+    {
+        mfxF64 overShootCBRPct = (pCO3->ScenarioInfo == MFX_SCENARIO_GAME_STREAMING) ? 1.2 : 1.4;
+        FixWinBRCMaxAvgKbps(par, *pCO3, overShootCBRPct);
+        changed += 1;
+    }
+
+    MFX_CHECK(!changed, MFX_WRN_INCOMPATIBLE_VIDEO_PARAM);
+    return MFX_ERR_NONE;
+}
+
 inline void SetDefaultOrderHint(mfxExtAV1AuxData* par)
 {
     if (!par)
@@ -3278,7 +3462,7 @@ void General::SetDefaults(
         SetDefault(pAuxPar->EnableCdef, MFX_CODINGOPTION_ON);
         SetDefault(pAuxPar->EnableRestoration, MFX_CODINGOPTION_OFF);
         SetDefault(pAuxPar->EnableLoopFilter, MFX_CODINGOPTION_ON);
-        SetDefault(pAuxPar->InterpFilter, MFX_AV1_INTERP_EIGHTTAP);
+        SetDefault(pAuxPar->InterpFilter, MFX_AV1_INTERP_DEFAULT);
         SetDefault(pAuxPar->DisableCdfUpdate, MFX_CODINGOPTION_OFF);
         // DisableFrameEndUpdateCdf has to be ON if DisableCdfUpdate is ON.
         SetDefault(pAuxPar->DisableFrameEndUpdateCdf, pAuxPar->DisableCdfUpdate);
@@ -3336,9 +3520,9 @@ mfxStatus General::CheckFrameRate(mfxVideoParam & par)
 {
     auto& fi = par.mfx.FrameInfo;
 
-    if (fi.FrameRateExtN && fi.FrameRateExtD) // FR <= 300
+    if (fi.FrameRateExtN && fi.FrameRateExtD) // FR <= 1000
     {
-        if (fi.FrameRateExtN > mfxU32(300 * fi.FrameRateExtD))
+        if (fi.FrameRateExtN > mfxU32(1000 * fi.FrameRateExtD))
         {
             fi.FrameRateExtN = fi.FrameRateExtD = 0;
             MFX_RETURN(MFX_ERR_UNSUPPORTED);
@@ -3706,6 +3890,23 @@ mfxStatus General::CheckTU(mfxVideoParam & par, const ENCODE_CAPS_AV1& /* caps *
 
 }
 
+inline mfxStatus FixDeltaQpRange(mfxU16& qp, mfxExtAV1AuxData* pAuxPar)
+{
+    MFX_CHECK(pAuxPar, MFX_ERR_NULL_PTR);
+
+    mfxU32 changed = 0;
+
+    changed += CheckQpInRangeOrClip(qp, pAuxPar->QP.YDcDeltaQ);
+    changed += CheckQpInRangeOrClip(qp, pAuxPar->QP.UDcDeltaQ);
+    changed += CheckQpInRangeOrClip(qp, pAuxPar->QP.UAcDeltaQ);
+    changed += CheckQpInRangeOrClip(qp, pAuxPar->QP.VDcDeltaQ);
+    changed += CheckQpInRangeOrClip(qp, pAuxPar->QP.VAcDeltaQ);
+
+    MFX_CHECK(!changed, MFX_WRN_INCOMPATIBLE_VIDEO_PARAM);
+
+    return MFX_ERR_NONE;
+}
+
 mfxStatus General::CheckDeltaQ(mfxVideoParam& par)
 {
     mfxExtAV1AuxData* pAuxPar = ExtBuffer::Get(par);
@@ -3723,6 +3924,20 @@ mfxStatus General::CheckDeltaQ(mfxVideoParam& par)
     changed += CheckMaxOrClip(pAuxPar->QP.VDcDeltaQ, 63);
     changed += CheckMinOrClip(pAuxPar->QP.VAcDeltaQ, -63);
     changed += CheckMaxOrClip(pAuxPar->QP.VAcDeltaQ, 63);
+
+    if (par.mfx.RateControlMethod == MFX_RATECONTROL_CQP)
+    {
+        changed += FixDeltaQpRange(par.mfx.QPI, pAuxPar);
+        if (par.mfx.GopPicSize > 1)
+        {
+            changed += FixDeltaQpRange(par.mfx.QPP, pAuxPar);
+        }
+        if (par.mfx.GopRefDist > 1)
+        {
+            changed += FixDeltaQpRange(par.mfx.QPB, pAuxPar);
+        }
+    }
+
     MFX_CHECK(!changed, MFX_WRN_INCOMPATIBLE_VIDEO_PARAM);
 
     return MFX_ERR_NONE;
@@ -4406,8 +4621,6 @@ mfxStatus General::GetCurrentFrameHeader(
     const bool frameIsIntra = FrameIsIntra(currFH);
     SetRefFrameFlags(task, currFH, frameIsIntra);
     SetRefFrameIndex(task, currFH, frameIsIntra);
-
-    currFH.quantization_params.base_q_idx = task.QpY;
 
     if (IsLossless(currFH))
     {

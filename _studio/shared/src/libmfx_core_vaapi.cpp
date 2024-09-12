@@ -1,4 +1,4 @@
-// Copyright (c) 2007-2021 Intel Corporation
+// Copyright (c) 2007-2024 Intel Corporation
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -434,6 +434,8 @@ public:
         case MFX_HW_PVC:
         case MFX_HW_MTL:
         case MFX_HW_DG2:
+        case MFX_HW_LNL:
+        case MFX_HW_BMG:
             return true;
         default:
             return false;
@@ -499,7 +501,7 @@ public:
             for (uint32_t plane = 1; plane < eb.num_planes; ++plane)
             {
                 eb.pitches[plane] = eb.pitches[0];
-                eb.offsets[plane] = uint32_t(eb.pitches[0] * eb.height);
+                eb.offsets[plane] = uint32_t(eb.pitches[0] * eb.height) * plane;
             }
         }
 
@@ -894,15 +896,13 @@ mfxStatus VAAPIVideoCORE_T<Base>::TryInitializeCm(bool force_cm_device_creation)
     {
         m_ForcedGpuCopyState = MFX_GPUCOPY_OFF;
     }
-/*
-// Uncomment after additional changes
+
 #ifdef ONEVPL_EXPERIMENTAL
-    bool use_cm_buffer_cache = m_ForcedGpuCopyState != MFX_GPUCOPY_SAFE;
+    bool use_cm_buffer_cache = m_ForcedGpuCopyState == MFX_GPUCOPY_FAST;
 #else
-    bool use_cm_buffer_cache = true;
-#endif
-*/
     bool use_cm_buffer_cache = false;
+#endif
+
     std::unique_ptr<CmCopyWrapper> tmp_cm(new CmCopyWrapper(use_cm_buffer_cache));
 
     MFX_CHECK_NULL_PTR1(tmp_cm->GetCmDevice(*m_p_display_wrapper));
@@ -1678,6 +1678,8 @@ mfxStatus VAAPIVideoCORE_T<Base>::IsGuidSupported(const GUID guid,
         break;
     case MFX_CODEC_VP8:
         break;
+    case MFX_CODEC_VVC:
+        break; 
     default:
         MFX_RETURN(MFX_ERR_UNSUPPORTED);
     }

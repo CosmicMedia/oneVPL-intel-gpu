@@ -365,6 +365,12 @@ void UpdatePPS(
     pps.min_base_qindex = task.MinBaseQIndex;
     pps.max_base_qindex = task.MaxBaseQIndex;
 
+    pps.y_dc_delta_q = static_cast<mfxI8>(bs_fh.quantization_params.DeltaQYDc);
+    pps.u_dc_delta_q = static_cast<mfxI8>(bs_fh.quantization_params.DeltaQUDc);
+    pps.u_ac_delta_q = static_cast<mfxI8>(bs_fh.quantization_params.DeltaQUAc);
+    pps.v_dc_delta_q = static_cast<mfxI8>(bs_fh.quantization_params.DeltaQVDc);
+    pps.v_ac_delta_q = static_cast<mfxI8>(bs_fh.quantization_params.DeltaQVAc);
+
     pps.order_hint = static_cast<mfxU8>(bs_fh.order_hint);
 
     //DPB and refs management
@@ -424,6 +430,7 @@ void UpdatePPS(
     //other params
     pps.picture_flags.bits.error_resilient_mode = bs_fh.error_resilient_mode;
     pps.picture_flags.bits.enable_frame_obu     = (task.InsertHeaders & INSERT_FRM_OBU) ? 1 : 0;
+    pps.picture_flags.bits.allow_intrabc        = bs_fh.allow_intrabc;
     pps.reconstructed_frame = rec.at(task.Rec.Idx);
 
     //offsets
@@ -854,6 +861,9 @@ void VAPacker::SubmitTask(const FeatureBlocks& blocks, TPushST Push)
 
         AddPackedHeaderIf(!!(task.InsertHeaders & INSERT_SPS)
             , ph.SPS, par, VAEncPackedHeaderAV1_SPS);
+
+        AddPackedHeaderIf(!!(task.InsertHeaders & INSERT_HDR)
+            , ph.HDR, par, VAEncPackedHeaderAV1_SPS);
 
         AddPackedHeaderIf(!!(task.InsertHeaders & INSERT_PPS)
             , ph.PPS, par, VAEncPackedHeaderAV1_PPS);

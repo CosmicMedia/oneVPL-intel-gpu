@@ -882,18 +882,6 @@ std::string DumpContext::dump(const std::string structName, const  mfxExtMBQP& E
     return str;
 }
 
-std::string DumpContext::dump(const std::string structName, const  mfxExtQualityInfoOutput& mfxExtQualityInfoOutput)
-{
-    std::string str;
-    str += dump(structName + ".Header", mfxExtQualityInfoOutput.Header) + "\n";
-    str += structName + ".FrameOrder=" + ToString(mfxExtQualityInfoOutput.FrameOrder) + "\n";
-    str += structName + ".MSE[]=" + DUMP_RESERVED_ARRAY(mfxExtQualityInfoOutput.MSE) + "\n";
-    str += structName + ".reserved[]=" + DUMP_RESERVED_ARRAY(mfxExtQualityInfoOutput.reserved1) + "\n";
-    str += structName + ".reserved[]=" + DUMP_RESERVED_ARRAY(mfxExtQualityInfoOutput.reserved2) + "\n";
-
-    return str;
-}
-
 std::string DumpContext::dump(const std::string structName, const  mfxExtEncoderIPCMArea& ExtEncoderIPCMArea)
 {
     std::string str;
@@ -1073,3 +1061,49 @@ std::string DumpContext::dump(const std::string structName, const  mfxExtVP9Para
     DUMP_FIELD_RESERVED(reserved);
     return str;
 }
+
+#if defined(ONEVPL_EXPERIMENTAL)
+std::string DumpContext::dump(const std::string structName, const  mfxExtQualityInfoMode& _struct)
+{
+    std::string str;
+    str += dump(structName + ".Header", _struct.Header) + "\n";
+    DUMP_FIELD(QualityInfoMode);
+    DUMP_FIELD_RESERVED(reserved);
+
+    return str;
+}
+
+std::string DumpContext::dump(const std::string structName, const  mfxExtQualityInfoOutput& _struct)
+{
+    std::string str;
+    str += dump(structName + ".Header", _struct.Header) + "\n";
+    DUMP_FIELD(FrameOrder);
+    str += structName + ".MSE[]=" + DUMP_RESERVED_ARRAY(_struct.MSE) + "\n";
+    DUMP_FIELD_RESERVED(reserved1);
+    DUMP_FIELD_RESERVED(reserved2);
+
+    return str;
+}
+
+std::string DumpContext::dump(const std::string structName, const  mfxExtAV1ScreenContentTools& _struct)
+{
+    std::string str;
+    str += dump(structName + ".Header", _struct.Header) + "\n";
+    DUMP_FIELD(Palette);
+    DUMP_FIELD(IntraBlockCopy);
+    DUMP_FIELD_RESERVED(reserved);
+
+    return str;
+}
+
+std::string DumpContext::dump(const std::string structName, const  mfxExtAlphaChannelEncCtrl& ExtAlphaCtrl)
+{
+    std::string str;
+    str += dump(structName + ".Header", ExtAlphaCtrl.Header) + "\n";
+    str += structName + ".EnableAlphaChannelEncoding=" + ToString(ExtAlphaCtrl.EnableAlphaChannelEncoding) + "\n";
+    str += structName + ".AlphaChannelMode=" + ToString(ExtAlphaCtrl.AlphaChannelMode) + "\n";
+    str += structName + ".AlphaChannelBitrateRatio=" + ToString(ExtAlphaCtrl.AlphaChannelBitrateRatio) + "\n";
+    str += structName + ".reserved[]=" + DUMP_RESERVED_ARRAY(ExtAlphaCtrl.reserved) + "\n";
+    return str;
+}
+#endif

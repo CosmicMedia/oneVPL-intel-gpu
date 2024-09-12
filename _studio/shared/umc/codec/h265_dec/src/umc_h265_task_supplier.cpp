@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2020 Intel Corporation
+// Copyright (c) 2012-2024 Intel Corporation
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -42,6 +42,7 @@
 #include "umc_h265_debug.h"
 
 #include "mfx_common.h" //  for trace routines
+#include "mfx_umc_alloc_wrapper.h"
 
 namespace UMC_HEVC_DECODER
 {
@@ -250,6 +251,22 @@ bool IsNeedSPSInvalidate(const H265SeqParamSet *old_sps, const H265SeqParamSet *
     return false;
 }
 
+// Check if bitstream params has changed
+static
+bool IsNeedRecreateSurface(const H265SeqParamSet* old_sps, const H265SeqParamSet* new_sps)
+{
+    if (!old_sps || !new_sps)
+        return false;
+
+    if ((old_sps->bit_depth_luma != new_sps->bit_depth_luma) ||
+        (old_sps->bit_depth_chroma != new_sps->bit_depth_chroma) ||
+        (old_sps->m_pcPTL.GetGeneralPTL()->profile_idc != new_sps->m_pcPTL.GetGeneralPTL()->profile_idc) ||
+        (old_sps->chroma_format_idc != new_sps->chroma_format_idc) ||
+        (old_sps->sps_max_dec_pic_buffering[0] < new_sps->sps_max_dec_pic_buffering[0]))
+        return true;
+
+    return false;
+}
 /****************************************************************************************************/
 // MVC_Extension_H265 class routine
 /****************************************************************************************************/
@@ -657,6 +674,7 @@ TaskSupplier_H265::TaskSupplier_H265()
     , m_pMemoryAllocator(0)
     , m_pFrameAllocator(0)
     , m_WaitForIDR(false)
+    , m_RecreateSurfaceFlag(false)
     , m_prevSliceBroken(false)
     , m_RA_POC(0)
     , NoRaslOutputFlag(0)
@@ -667,6 +685,7 @@ TaskSupplier_H265::TaskSupplier_H265()
     , m_UIDFrameCounter(0)
     , m_sei_messages(0)
     , m_isInitialized(false)
+    , m_pCore(nullptr)
 {
 }
 
@@ -1127,6 +1146,7 @@ UMC::Status TaskSupplier_H265::xDecodeSPS(H265HeadersBitstream *bs)
     bool newResolution = false;
     if (IsNeedSPSInvalidate(old_sps, &sps))
     {
+        m_RecreateSurfaceFlag = IsNeedRecreateSurface(old_sps, &sps);
         newResolution = true;
     }
 
@@ -1412,9 +1432,10 @@ UMC::Status TaskSupplier_H265::DecodeHeaders(UMC::MediaDataEx *nalUnit)
         NalUnitType nal_unit_type;
         uint32_t temporal_id = 0;
 
-        bitStream.GetNALUnitType(nal_unit_type, temporal_id);
-
-        switch(nal_unit_type)
+        umcRes = bitStream.GetNALUnitType(nal_unit_type, temporal_id);
+        if (umcRes != UMC::UMC_OK)
+            return umcRes;
+        switch (nal_unit_type)
         {
         case NAL_UT_VPS:
             umcRes = xDecodeVPS(&bitStream);
@@ -1609,6 +1630,7 @@ UMC::Status TaskSupplier_H265::AddSource(UMC::MediaData * pSource)
 {
     MFX_AUTO_LTRACE(MFX_TRACE_LEVEL_INTERNAL, __FUNCTION__);
     H265DecoderFrame* completed = 0;
+
     UMC::Status umcRes = CompleteDecodedFrames(&completed);
     if (umcRes != UMC::UMC_OK)
         return pSource || !completed ? umcRes : UMC::UMC_OK;
@@ -1850,7 +1872,15 @@ UMC::Status TaskSupplier_H265::AddOneFrame(UMC::MediaData * pSource)
                             int32_t nalIndex = pMediaDataEx->index;
                             int32_t size = pMediaDataEx->offsets[nalIndex + 1] - pMediaDataEx->offsets[nalIndex];
 
-                            m_checkCRAInsideResetProcess = true;
+                            auto frame_source = dynamic_cast<SurfaceSource*>(m_pFrameAllocator);
+                            if (frame_source && frame_source->GetSurfaceType() && !m_RecreateSurfaceFlag)
+                            {
+                                m_checkCRAInsideResetProcess = false;
+                            }
+                            else
+                            {
+                                m_checkCRAInsideResetProcess = true;
+                            }
 
                             if (AddSlice(0, !pSource) == UMC::UMC_OK)
                             {
@@ -1882,6 +1912,7 @@ UMC::Status TaskSupplier_H265::AddOneFrame(UMC::MediaData * pSource)
                 GetView()->pDPB->IncreaseRefPicListResetCount(0); // for flushing DPB
                 NoRaslOutputFlag = 0;
                 m_bFirstSliceInSequence = true;
+                m_pocDecoding.Reset();
                 return UMC::UMC_OK;
                 break;
 

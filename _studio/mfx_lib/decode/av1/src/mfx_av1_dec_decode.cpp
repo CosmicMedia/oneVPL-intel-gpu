@@ -985,12 +985,13 @@ mfxStatus VideoDECODEAV1::SubmitFrame(mfxBitstream* bs, mfxFrameSurface1* surfac
     try
     {
         MFXMediaDataAdapter src(bs);
+        m_decoder->SetVideoCore(m_core);
 
         for (;;)
         {
             sts = m_surface_source->SetCurrentMFXSurface(surface_work);
             MFX_CHECK_STS(sts);
-
+            m_decoder->SetVideoCore(m_core);
             UMC::Status umcRes = m_surface_source->HasFreeSurface() ?
                 m_decoder->GetFrame(bs ? &src : 0, nullptr) : UMC::UMC_ERR_NEED_FORCE_OUTPUT;
 
@@ -1241,6 +1242,29 @@ mfxStatus VideoDECODEAV1::FillVideoParam(UMC_AV1_DECODER::AV1DecoderParams const
         || par->mfx.FrameInfo.FourCC == MFX_FOURCC_Y416)
         par->mfx.FrameInfo.Shift = 1;
 
+    // video signal section
+    mfxExtVideoSignalInfo * videoSignal = (mfxExtVideoSignalInfo *)GetExtendedBuffer(par->ExtParam, par->NumExtParam, MFX_EXTBUFF_VIDEO_SIGNAL_INFO);
+    if (videoSignal)
+    {
+        videoSignal->VideoFormat = static_cast<mfxU16>(vp->info.color_format);
+        videoSignal->VideoFullRange = static_cast<mfxU16>(vp->color_range);
+        videoSignal->ColourDescriptionPresent = static_cast<mfxU16>(vp->color_description_present_flag);
+        videoSignal->ColourPrimaries = static_cast<mfxU16>(vp->color_primaries);
+        videoSignal->TransferCharacteristics = static_cast<mfxU16>(vp->transfer_characteristics);
+        videoSignal->MatrixCoefficients = static_cast<mfxU16>(vp->matrix_coefficients);
+    }
+
+    if (vp->framerate_n && vp->framerate_d)
+    {
+        par->mfx.FrameInfo.FrameRateExtN = vp->framerate_n;
+        par->mfx.FrameInfo.FrameRateExtD = vp->framerate_d;
+    }
+    else // If no frame rate info in bitstream, will set to default 0
+    {
+        par->mfx.FrameInfo.FrameRateExtN = 0;
+        par->mfx.FrameInfo.FrameRateExtD = 0;
+    }
+
     return MFX_ERR_NONE;
 }
 
@@ -1367,6 +1391,13 @@ mfxStatus VideoDECODEAV1::FillOutputSurface(mfxFrameSurface1** surf_out, mfxFram
 
     surface_out->Info.FrameRateExtD = isShouldUpdate ? m_init_par.mfx.FrameInfo.FrameRateExtD : m_first_par.mfx.FrameInfo.FrameRateExtD;
     surface_out->Info.FrameRateExtN = isShouldUpdate ? m_init_par.mfx.FrameInfo.FrameRateExtN : m_first_par.mfx.FrameInfo.FrameRateExtN;
+
+    mfxExtAV1FilmGrainParam* extFilmGrain = (mfxExtAV1FilmGrainParam*)GetExtendedBuffer(surface_out->Data.ExtParam, surface_out->Data.NumExtParam, MFX_EXTBUFF_AV1_FILM_GRAIN_PARAM);
+    if (extFilmGrain)
+    {
+        UMC_AV1_DECODER::FrameHeader const& fh = pFrame->GetFrameHeader();
+        CopyFilmGrainParam(*extFilmGrain, fh.film_grain_params);
+    }
 
     const UMC_AV1_DECODER::FrameHeader& fh = pFrame->GetFrameHeader();
     // extract HDR MasteringDisplayColourVolume info

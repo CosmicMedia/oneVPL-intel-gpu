@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2023 Intel Corporation
+// Copyright (c) 2017-2024 Intel Corporation
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -30,6 +30,9 @@
 #include "umc_av1_frame.h"
 
 #include <algorithm>
+#include "mfx_umc_alloc_wrapper.h"
+
+#include "libmfx_core_vaapi.h"
 
 #include "mfx_unified_av1d_logging.h"
 
@@ -58,6 +61,10 @@ namespace UMC_AV1_DECODER
         , m_prev_frame_header_exist(false)
         , m_specified_anchor_Idx(0)
         , m_isAnchor(false)
+        , m_RecreateSurfaceFlag(false)
+        , m_drcFrameWidth(0)
+        , m_drcFrameHeight(0)
+        , m_pCore(nullptr)
     {
         outputed_frames.clear();
         m_prev_frame_header = {};
@@ -114,6 +121,7 @@ namespace UMC_AV1_DECODER
             old_sps->max_frame_height = new_sps->max_frame_height;
             old_sps->seq_profile = new_sps->seq_profile;
             old_sps->film_grain_param_present = new_sps->film_grain_param_present;
+            old_sps->color_config.BitDepth = new_sps->color_config.BitDepth;
             return false;
         }
 
@@ -137,6 +145,27 @@ namespace UMC_AV1_DECODER
             return true;
         }
 
+        if (old_sps->color_config.BitDepth != new_sps->color_config.BitDepth)
+        {
+            old_sps->color_config.BitDepth = new_sps->color_config.BitDepth;
+            return true;
+        }
+
+        return false;
+    }
+
+    static bool IsNeedRecreateSurface(SequenceHeader* old_sps, const SequenceHeader* new_sps)
+    {
+        if (!old_sps || !new_sps)
+        {
+            return false;
+        }
+
+        if ((old_sps->seq_profile != new_sps->seq_profile) ||
+            (old_sps->film_grain_param_present != new_sps->film_grain_param_present))
+        {
+            return true;
+        }
         return false;
     }
 
@@ -666,6 +695,7 @@ namespace UMC_AV1_DECODER
                 uint32_t lst_shift;
                 bs.ReadOBUInfo(obuInfo);
                 const AV1_OBU_TYPE obuType = obuInfo.header.obu_type;
+                auto frame_source = dynamic_cast<SurfaceSource*>(allocator);
 
                 if (obuInfo.header.obu_type > OBU_PADDING)
                     return UMC::UMC_ERR_INVALID_PARAMS;
@@ -707,8 +737,13 @@ namespace UMC_AV1_DECODER
                         }
 
                         Update_drc(sequence_header.get());
-                        // new resolution required
-                        return UMC::UMC_NTF_NEW_RESOLUTION;
+                        m_RecreateSurfaceFlag = IsNeedRecreateSurface(old_seqHdr.get(), sequence_header.get());
+
+                        if ((frame_source && !frame_source->GetSurfaceType()) || (frame_source->GetSurfaceType() && m_RecreateSurfaceFlag))
+                        {
+                            // new resolution required
+                            return UMC::UMC_NTF_NEW_RESOLUTION;
+                        }
                     }
 
                     set_seq_header_ready();
@@ -745,7 +780,13 @@ namespace UMC_AV1_DECODER
                         params.info.clip_info.height = (int32_t)(tlInfo.frameHeightInTiles * fh.tile_info.TileHeight * MI_SIZE);
                         params.info.disp_clip_info = params.info.clip_info;
                         PreFrame_id = OldPreFrame_id;
-                        return UMC::UMC_NTF_NEW_RESOLUTION;
+
+                        m_RecreateSurfaceFlag = IsNeedRecreateSurface(old_seqHdr.get(), sequence_header.get());
+                        if ((frame_source && !frame_source->GetSurfaceType()) || (frame_source->GetSurfaceType() && m_RecreateSurfaceFlag))
+                        {
+                            // new resolution required
+                            return UMC::UMC_NTF_NEW_RESOLUTION;
+                        }
                     }
 
                     fh.output_frame_width_in_tiles  = tlInfo.frameWidthInTiles;
@@ -1104,6 +1145,20 @@ namespace UMC_AV1_DECODER
 
         par.film_grain = sh.film_grain_param_present;
 
+        // video signal
+        par.color_range = sh.color_config.color_range;
+        par.color_description_present_flag = sh.color_config.color_description_present_flag;
+        par.color_primaries = sh.color_config.color_primaries;
+        par.transfer_characteristics = sh.color_config.transfer_characteristics;
+        par.matrix_coefficients = sh.color_config.matrix_coefficients;
+
+        par.framerate_n = sh.timing_info.time_scale;
+        par.framerate_d = sh.timing_info.num_units_in_display_tick;
+        if (sh.timing_info.num_units_in_display_tick && sh.timing_info.time_scale)
+        {
+            par.info.framerate = sh.timing_info.time_scale / sh.timing_info.num_units_in_display_tick;
+        }
+
         return UMC::UMC_OK;
     }
 
@@ -1266,9 +1321,38 @@ namespace UMC_AV1_DECODER
             throw av1_exception(sts);
 
         UMC::FrameMemID id;
-        sts = allocator->Alloc(&id, &info, 0);
+        sts = allocator->Alloc(&id, &info, mfx_UMC_ReallocAllowed);
+
+        auto frame_source = dynamic_cast<SurfaceSource*>(allocator);
         if (sts != UMC::UMC_OK)
-            throw av1_exception(UMC::UMC_ERR_ALLOC);
+        {
+            if (sts == UMC::UMC_ERR_NOT_ENOUGH_BUFFER && frame_source && frame_source->GetSurfaceType() && !m_RecreateSurfaceFlag)
+            {
+                m_drcFrameWidth = (uint16_t)params.info.clip_info.width;
+                m_drcFrameHeight = (uint16_t)params.info.clip_info.height;
+            }
+            else
+            {
+                throw av1_exception(UMC::UMC_ERR_ALLOC);
+            }
+        }
+
+        if (frame_source)
+        {
+            mfxFrameSurface1* surface = frame_source->GetSurfaceByIndex(id);
+            if (!surface)
+                throw av1_exception(UMC::UMC_ERR_ALLOC);
+
+            if (m_drcFrameWidth > surface->Info.Width || m_drcFrameHeight > surface->Info.Height)
+            {
+                surface->Info.Width = mfx::align2_value(m_drcFrameWidth, 16);
+                surface->Info.Height = mfx::align2_value(m_drcFrameHeight, 16);
+                VAAPIVideoCORE_VPL* vaapi_core_vpl = reinterpret_cast<VAAPIVideoCORE_VPL*>(m_pCore->QueryCoreInterface(MFXIVAAPIVideoCORE_VPL_GUID));
+                if (!vaapi_core_vpl)
+                    throw av1_exception(UMC::UMC_ERR_NULL_PTR);
+                vaapi_core_vpl->ReallocFrame(surface);
+            }
+        }
 
         AllocateFrameData(info, id, frame);
         if (frame.m_index < 0)
