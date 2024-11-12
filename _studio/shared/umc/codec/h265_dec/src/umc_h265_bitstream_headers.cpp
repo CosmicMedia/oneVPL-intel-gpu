@@ -331,9 +331,8 @@ UMC::Status H265HeadersBitstream::GetVideoParamSet(H265VideoParamSet *pcVPS)
     }
 
     pcVPS->vps_max_layer_id = GetBits(6);
-    //remove the max layer ID check to enable decode basic layer of multiple layer clips
-    /*if (pcVPS->vps_max_layer_id >= MAX_NUH_LAYER_ID)
-        throw h265_exception(UMC::UMC_ERR_INVALID_STREAM);*/
+    if (pcVPS->vps_max_layer_id > MAX_NUH_LAYER_ID)
+        throw h265_exception(UMC::UMC_ERR_INVALID_STREAM);
 
     pcVPS->vps_num_layer_sets = GetVLCElementU() + 1;
     if (pcVPS->vps_num_layer_sets > MAX_VPS_NUM_LAYER_SETS)
@@ -2103,6 +2102,8 @@ UMC::Status H265HeadersBitstream::GetNALUnitType(NalUnitType &nal_unit_type, uin
 
     nal_unit_type = (NalUnitType)GetBits(6);
     uint32_t nuh_layer_id = GetBits(6);
+    if (nuh_layer_id > MAX_NUH_LAYER_ID)
+        throw h265_exception(UMC::UMC_ERR_INVALID_STREAM);
     if (nuh_layer_id)
         return UMC::UMC_ERR_UNSUPPORTED;//only support layer 0 which is the basic layer
 

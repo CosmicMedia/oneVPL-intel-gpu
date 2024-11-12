@@ -231,8 +231,8 @@ Status MJPEGVideoDecoderBaseMFX::FillVideoParam(mfxVideoParam *par, bool /*full*
     par->mfx.FrameInfo.AspectRatioW = 0;
     par->mfx.FrameInfo.AspectRatioH = 0;
 
-    par->mfx.FrameInfo.FrameRateExtD = 1;
-    par->mfx.FrameInfo.FrameRateExtN = 30;
+    par->mfx.FrameInfo.FrameRateExtD = 0;
+    par->mfx.FrameInfo.FrameRateExtN = 0;
 
     par->mfx.CodecProfile = 1;
     par->mfx.CodecLevel = 1;
@@ -263,7 +263,7 @@ Status MJPEGVideoDecoderBaseMFX::FillVideoParam(mfxVideoParam *par, bool /*full*
         }
         else if (par->mfx.JPEGChromaFormat == MFX_CHROMAFORMAT_YUV420)
         {
-            par->mfx.FrameInfo.FourCC = MFX_FOURCC_IMC3;
+            par->mfx.FrameInfo.FourCC = MFX_FOURCC_NV12;
         }
         else if (par->mfx.JPEGChromaFormat == MFX_CHROMAFORMAT_YUV422 || par->mfx.JPEGChromaFormat == MFX_CHROMAFORMAT_YUV422H)
         {
