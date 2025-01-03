@@ -168,6 +168,19 @@ namespace UMC_AV1_DECODER
         return false;
     }
 
+
+    void AV1Decoder::AV1IncrementReference(const std::string& function, int line, AV1DecoderFrame* frame)
+    {
+        frame->IncrementReference();
+        DPBLOG_PRINT(function, line, "[+]", frame, frame->GetRefCounter());
+    }
+
+    void AV1Decoder::AV1DecrementReference(const std::string& function, int line, AV1DecoderFrame* frame)
+    {
+        frame->DecrementReference();
+        DPBLOG_PRINT(function, line, "[-]", frame, frame->GetRefCounter());
+    }
+
     UMC::Status AV1Decoder::DecodeHeader(UMC::MediaData* in, UMC_AV1_DECODER::AV1DecoderParams& par)
     {
         if (!in)
@@ -285,10 +298,12 @@ namespace UMC_AV1_DECODER
             if ((fh.refresh_frame_flags >> i) & 1)
             {
                 if (!prevFrameDPB.empty() && prevFrameDPB[i] && prevFrameDPB[i]->UID != -1)
-                    prevFrameDPB[i]->DecrementReference();
+                {
+                    AV1DecrementReference(__FUNCTION__, __LINE__, prevFrameDPB[i]);
+                }
 
                 updatedFrameDPB[i] = const_cast<AV1DecoderFrame*>(prevFrame);
-                prevFrame->IncrementReference();
+                AV1IncrementReference(__FUNCTION__, __LINE__, prevFrame); 
             }
         }
 
@@ -401,7 +416,7 @@ namespace UMC_AV1_DECODER
             repeateFrame = pFrame->GetMemID();
 
             //repeat frame reference counter increase here, and will decrease in queryframe()
-            pFrame->IncrementReference();
+            AV1IncrementReference(__FUNCTION__, __LINE__, pFrame);
 
             FrameHeader const& Repeat_H = pFrame->GetFrameHeader();
             if (!Repeat_H.showable_frame)
@@ -415,10 +430,12 @@ namespace UMC_AV1_DECODER
                     if ((Repeat_H.refresh_frame_flags >> i) & 1)
                     {
                         if (!frameDPB.empty() && frameDPB[i] && frameDPB[i]->GetRefCounter())
-                           frameDPB[i]->DecrementReference();
-
+                        {
+                            AV1DecrementReference(__FUNCTION__, __LINE__, frameDPB[i]);
+                        } 
                         frameDPB[i] = const_cast<AV1DecoderFrame*>(pFrame);
-                        pFrame->IncrementReference();
+                        AV1IncrementReference(__FUNCTION__, __LINE__, pFrame);
+                       
                     }
                 }
             }
@@ -591,8 +608,9 @@ namespace UMC_AV1_DECODER
         frame->SetFrameTime(frame_order * in_framerate);
         frame->SetFrameOrder(frame_order);
         FrameHeader strFrameHeader = frame->GetFrameHeader();
-        if (strFrameHeader.show_frame || strFrameHeader.show_existing_frame)//add for fix -DecoderdOrder hang issue
+        if (strFrameHeader.show_frame || frame->ShowAsExisting()) //display frame or repeat frame, frame order ++
             frame_order++;
+
     }
 
     UMC::Status AV1Decoder::GetFrame(UMC::MediaData* in, UMC::MediaData*)
@@ -921,6 +939,10 @@ namespace UMC_AV1_DECODER
                 }
  
                 CompleteDecodedFrames(fh, pCurrFrame, pPrevFrame);
+                if (repeatedFrame)
+                {
+                    pCurrFrame->ShowAsExisting(true);
+                }
                 CalcFrameTime(pCurrFrame);
 
                 if (!pCurrFrame)
@@ -1198,7 +1220,7 @@ namespace UMC_AV1_DECODER
                     if (lastest_submitted_frame->UID == -1)
                         lastest_submitted_frame = nullptr;
                     else if(lastest_submitted_frame != pCurrFrame)
-                        lastest_submitted_frame->DecrementReference();
+                        AV1DecrementReference(__FUNCTION__, __LINE__, lastest_submitted_frame);
                 }
             }
         }
@@ -1208,7 +1230,7 @@ namespace UMC_AV1_DECODER
             AV1DecoderFrame* temp = *iter;
             if(temp->Outputted() && temp->Displayed() && temp->RefUpdated())
             {
-                temp->DecrementReference();
+                AV1DecrementReference(__FUNCTION__, __LINE__, temp);
                 iter = outputed_frames.erase(iter);
             }
             else
@@ -1227,7 +1249,7 @@ namespace UMC_AV1_DECODER
         std::unique_lock<std::mutex> l(guard);
         if (frame->Outputted() && frame->Displayed()) //repeat frame only need these 2 flags, as repeat frame will not call ReferenceListUpdate() function
         {
-            frame->DecrementReference(); //repeat frame decrement here
+            AV1DecrementReference(__FUNCTION__, __LINE__, frame);
         }
     }
 
@@ -1260,7 +1282,7 @@ namespace UMC_AV1_DECODER
         frame->Reset(&fh);
 
         // increase ref counter when we get empty frame from DPB
-        frame->IncrementReference();
+        AV1IncrementReference(__FUNCTION__, __LINE__, frame);
 
         return frame;
     }
@@ -1274,7 +1296,7 @@ namespace UMC_AV1_DECODER
 
         frame->UID = counter++;
         frame->Reset(&fh);
-        frame->IncrementReference();
+        AV1IncrementReference(__FUNCTION__, __LINE__, frame);
         return frame;
     }
 
